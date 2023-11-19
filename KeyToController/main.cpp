@@ -9,9 +9,9 @@
 #pragma comment(lib, "setupapi.lib")
 
 #define STICK_NEUTRAL 128
-#define STICK_LEFT 5
+#define STICK_LEFT 6
 #define STICK_RIGHT 250
-#define STICK_UP 5
+#define STICK_UP 6
 #define STICK_DOWN 250
 
 #define CONFIG_FILE_NAME "ktc_conf.txt"
@@ -20,27 +20,119 @@
 #define KEYBIND_RIGHT_STICK_UP 2
 int KEYBINDS[3];
 
-int main() {
-    const auto client = vigem_alloc();
 
-    if (client == nullptr)
-    {
+HHOOK keyboard_hook;
+
+PVIGEM_CLIENT client;
+PVIGEM_TARGET pad;
+
+int key_held[3];
+
+LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+
+    if (nCode != HC_ACTION) {
+        return CallNextHookEx(NULL, nCode, wParam, lParam);
+    }
+
+    KBDLLHOOKSTRUCT kbdStruct = *((KBDLLHOOKSTRUCT*)lParam);
+
+    if (wParam == WM_KEYUP) {
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_LEFT]) {
+            key_held[KEYBIND_LEFT_STICK_LEFT] = 0;
+        }
+
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_RIGHT]) {
+            key_held[KEYBIND_LEFT_STICK_RIGHT] = 0;
+        }
+
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_RIGHT_STICK_UP]) {
+            key_held[KEYBIND_RIGHT_STICK_UP] = 0;
+        }
+    }
+
+    if (wParam == WM_KEYDOWN) {
+
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_LEFT]) {
+            key_held[KEYBIND_LEFT_STICK_LEFT] = 1;
+        }
+
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_RIGHT]) {
+            key_held[KEYBIND_LEFT_STICK_RIGHT] = 1;
+        }
+
+        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_RIGHT_STICK_UP]) {
+            key_held[KEYBIND_RIGHT_STICK_UP] = 1;
+        }
+    }
+
+
+    BYTE left_stick_X = STICK_NEUTRAL;
+    BYTE left_stick_Y = STICK_NEUTRAL;
+    BYTE right_stick_X = STICK_NEUTRAL;
+    BYTE right_stick_Y = STICK_NEUTRAL;
+
+    if (key_held[KEYBIND_LEFT_STICK_RIGHT]) {
+        left_stick_X = STICK_RIGHT;
+    }
+    else if (key_held[KEYBIND_LEFT_STICK_LEFT]) {
+        left_stick_X = STICK_LEFT;
+    }
+    else {
+        left_stick_X = STICK_NEUTRAL;
+    }
+
+    if (key_held[KEYBIND_RIGHT_STICK_UP]) {
+        right_stick_Y = STICK_UP;
+    }
+    else {
+        right_stick_Y = STICK_NEUTRAL;
+    }
+
+    DS4_REPORT inputs = {
+       left_stick_X,
+       left_stick_Y,
+       right_stick_X,
+       right_stick_Y,
+       8,
+       0,
+       0,
+       0
+    };
+
+    vigem_target_ds4_update(client, pad, inputs);
+
+    // call the next hook in the hook chain. This is nessecary or your hook chain will break and the hook stops
+    return CallNextHookEx(keyboard_hook, nCode, wParam, lParam);
+}
+
+
+
+
+
+int main() {
+//Create low level hook for keyboard
+    keyboard_hook = SetWindowsHookEx(WH_KEYBOARD_LL, &HookProc, NULL, 0);
+
+
+
+
+ //Create virtual controller
+    client = vigem_alloc();
+
+    if (client == nullptr) {
         std::cerr << "Uh, not enough memory to do that?!" << std::endl;
         return -1;
     }
 
-
     const auto retval = vigem_connect(client);
 
-    if (!VIGEM_SUCCESS(retval))
-    {
+    if (!VIGEM_SUCCESS(retval)) {
         std::cerr << "ViGEm Bus connection failed with error code: 0x" << std::hex << retval << std::endl;
         return -1;
     }
 
-    
     // Allocate handle to identify new pad
-    const auto pad = vigem_target_ds4_alloc();
+    pad = vigem_target_ds4_alloc();
 
     // Add client to the bus, this equals a plug-in event
     const auto pir = vigem_target_add(client, pad);
@@ -52,7 +144,8 @@ int main() {
     }
 
 
-    // read config file
+
+ // read config file
     std::ifstream config_file (CONFIG_FILE_NAME);
 
     if (!config_file.is_open()) {
@@ -67,44 +160,14 @@ int main() {
     }
     config_file.close();
 
-    int RUN_LOOP = 1;
-    while (RUN_LOOP) {
-        BYTE left_stick_X = STICK_NEUTRAL;
-        BYTE left_stick_Y = STICK_NEUTRAL;
-        BYTE right_stick_X = STICK_NEUTRAL;
-        BYTE right_stick_Y = STICK_NEUTRAL;
-
-        // try https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getkeyboardstate
-        if (GetAsyncKeyState(KEYBINDS[KEYBIND_LEFT_STICK_LEFT])) {
-            left_stick_X = STICK_LEFT;
+    MSG msg;
+    while (GetMessageW(&msg, NULL, 0, 0)) {
+        if (GetAsyncKeyState(0x31)) {
+            break;
         }
-
-        if (GetAsyncKeyState(KEYBINDS[KEYBIND_LEFT_STICK_RIGHT])) {
-            left_stick_X = STICK_RIGHT;
-        }
-
-        if (GetAsyncKeyState(KEYBINDS[KEYBIND_RIGHT_STICK_UP])) {
-            right_stick_Y = STICK_UP;
-        }
-
-        std::cout << (int)left_stick_X << "\t" << (int)right_stick_Y << std::endl;
-
-
-        DS4_REPORT inputs = {
-            left_stick_X,
-            left_stick_Y,
-            right_stick_X,
-            right_stick_Y,
-            0,
-            0,
-            0,
-            0
-        };
-
-        vigem_target_ds4_update(client, pad, inputs);
     }
 
-    //cleanup
+//cleanup
     vigem_target_remove(client, pad);
     vigem_target_free(pad);
 }

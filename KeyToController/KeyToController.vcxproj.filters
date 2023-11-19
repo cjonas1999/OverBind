@@ -50,7 +50,4 @@
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
-  <ItemGroup>
-    <Text Include="ktc_conf.txt" />
-  </ItemGroup>
 </Project>
