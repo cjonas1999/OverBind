@@ -18,6 +18,25 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ViGEmClient\src\ViGEmClient.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ViGEmClient\include\ViGEm\Client.h" />
+    <ClInclude Include="ViGEmClient\include\ViGEm\Common.h" />
+    <ClInclude Include="ViGEmClient\include\ViGEm\km\BusShared.h" />
+    <ClInclude Include="ViGEmClient\include\ViGEm\Util.h" />
+    <ClInclude Include="ViGEmClient\src\Internal.h" />
+    <ClInclude Include="ViGEmClient\src\resource.h" />
+    <ClInclude Include="ViGEmClient\src\UniUtil.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ViGEmClient\src\ViGEmClient.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="ktc_conf.txt" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
@@ -88,6 +107,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>D:\programs\KeyToController\KeyToController\ViGEmClient\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
