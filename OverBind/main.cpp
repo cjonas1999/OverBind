@@ -37,31 +37,18 @@ LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     KBDLLHOOKSTRUCT kbdStruct = *((KBDLLHOOKSTRUCT*)lParam);
 
     if (wParam == WM_KEYUP) {
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_LEFT]) {
-            key_held[KEYBIND_LEFT_STICK_LEFT] = 0;
-        }
-
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_RIGHT]) {
-            key_held[KEYBIND_LEFT_STICK_RIGHT] = 0;
-        }
-
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_RIGHT_STICK_UP]) {
-            key_held[KEYBIND_RIGHT_STICK_UP] = 0;
+        for (int i = 0; i < 3; i++) {
+            if (kbdStruct.vkCode == KEYBINDS[i]) {
+                key_held[i] = 0;
+            }
         }
     }
 
     if (wParam == WM_KEYDOWN) {
-
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_LEFT]) {
-            key_held[KEYBIND_LEFT_STICK_LEFT] = 1;
-        }
-
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_LEFT_STICK_RIGHT]) {
-            key_held[KEYBIND_LEFT_STICK_RIGHT] = 1;
-        }
-
-        if (kbdStruct.vkCode == KEYBINDS[KEYBIND_RIGHT_STICK_UP]) {
-            key_held[KEYBIND_RIGHT_STICK_UP] = 1;
+        for (int i = 0; i < 3; i++) {
+            if (kbdStruct.vkCode == KEYBINDS[i]) {
+                key_held[i] = 1;
+            }
         }
     }
 
