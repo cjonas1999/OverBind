@@ -162,9 +162,6 @@ int main() {
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
-        if (GetAsyncKeyState(0x31)) {
-            break;
-        }
     }
 
 //cleanup
