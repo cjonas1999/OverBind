@@ -14,7 +14,7 @@
 #define STICK_UP 6
 #define STICK_DOWN 250
 
-#define CONFIG_FILE_NAME "ktc_conf.txt"
+#define CONFIG_FILE_NAME "OverBind_conf.txt"
 #define KEYBIND_LEFT_STICK_LEFT 0
 #define KEYBIND_LEFT_STICK_RIGHT 1
 #define KEYBIND_RIGHT_STICK_UP 2
