@@ -8,11 +8,11 @@
 #include <string>
 #pragma comment(lib, "setupapi.lib")
 
-#define STICK_NEUTRAL 128
-#define STICK_LEFT 6
-#define STICK_RIGHT 250
-#define STICK_UP 6
-#define STICK_DOWN 250
+#define STICK_NEUTRAL 0
+#define STICK_LEFT -29000
+#define STICK_RIGHT 29000
+#define STICK_UP -29000
+#define STICK_DOWN 29000
 
 #define CONFIG_FILE_NAME "OverBind_conf.txt"
 #define KEYBIND_LEFT_STICK_LEFT 0
@@ -53,10 +53,10 @@ LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
     }
 
 
-    BYTE left_stick_X = STICK_NEUTRAL;
-    BYTE left_stick_Y = STICK_NEUTRAL;
-    BYTE right_stick_X = STICK_NEUTRAL;
-    BYTE right_stick_Y = STICK_NEUTRAL;
+    SHORT left_stick_X = STICK_NEUTRAL;
+    SHORT left_stick_Y = STICK_NEUTRAL;
+    SHORT right_stick_X = STICK_NEUTRAL;
+    SHORT right_stick_Y = STICK_NEUTRAL;
 
     if (key_held[KEYBIND_LEFT_STICK_RIGHT]) {
         left_stick_X = STICK_RIGHT;
@@ -75,18 +75,17 @@ LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         right_stick_Y = STICK_NEUTRAL;
     }
 
-    DS4_REPORT inputs = {
+    XUSB_REPORT inputs = {
+       0,
+       0,
+       0,
        left_stick_X,
        left_stick_Y,
        right_stick_X,
-       right_stick_Y,
-       8,
-       0,
-       0,
-       0
+       right_stick_Y
     };
 
-    vigem_target_ds4_update(client, pad, inputs);
+    vigem_target_x360_update(client, pad, inputs);
 
     // call the next hook in the hook chain. This is nessecary or your hook chain will break and the hook stops
     return CallNextHookEx(keyboard_hook, nCode, wParam, lParam);
@@ -119,7 +118,7 @@ int main() {
     }
 
     // Allocate handle to identify new pad
-    pad = vigem_target_ds4_alloc();
+    pad = vigem_target_x360_alloc();
 
     // Add client to the bus, this equals a plug-in event
     const auto pir = vigem_target_add(client, pad);
