@@ -11,8 +11,8 @@
 #define STICK_NEUTRAL 0
 #define STICK_LEFT -29000
 #define STICK_RIGHT 29000
-#define STICK_UP -29000
-#define STICK_DOWN 29000
+#define STICK_UP 29000
+#define STICK_DOWN -29000
 
 #define CONFIG_FILE_NAME "OverBind_conf.txt"
 #define KEYBIND_LEFT_STICK_LEFT 0

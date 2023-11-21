@@ -3,8 +3,8 @@
 use tauri::command;
 use std::env; // For working with the environment, including the current directory
 
-#[command]
-fn run_key_to_controller() -> Result<String, String> {
+#[command(async)]
+fn run_overbind() -> Result<String, String> {
     use std::process::{Command, Stdio};
 
     // Print the current working directory
@@ -14,7 +14,7 @@ fn run_key_to_controller() -> Result<String, String> {
     }
 
     // Adjust the path to the executable relative to the current working directory
-    let relative_path = "KeyToController.exe"; // Update this path accordingly
+    let relative_path = "OverBind.exe"; // Update this path accordingly
     let exe_path = match env::current_dir() {
         Ok(mut path) => {
             path.push(relative_path);
@@ -40,7 +40,7 @@ fn run_key_to_controller() -> Result<String, String> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run_key_to_controller])
+        .invoke_handler(tauri::generate_handler![run_overbind])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/tauri";
 
 const runCppExecutable = () => {
-  invoke('run_key_to_controller')
+  invoke('run_overbind')
     .then(response => {
       console.log(response); // Log or handle the success response
     })
