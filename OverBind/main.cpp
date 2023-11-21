@@ -148,6 +148,8 @@ int main() {
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 
 //cleanup
