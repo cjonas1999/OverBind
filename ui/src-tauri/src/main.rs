@@ -9,8 +9,26 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::{env, io};
 use tauri::api::path::data_dir;
-// For working with the environment, including the current directory
-use tauri::command;
+mod key_interceptor;
+
+use crate::key_interceptor::KeyInterceptor;
+use tauri::{command, State};
+
+#[derive(Clone)]
+struct KeyInterceptorState(Arc<Mutex<KeyInterceptor>>);
+
+#[tauri::command]
+fn start_interception(state: State<KeyInterceptorState>) -> Result<(), String> {
+    let mut interceptor = state.0.lock().unwrap();
+    let _ = interceptor.initialize().map_err(|e| e.to_string());
+    interceptor.start().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn stop_interception(state: State<KeyInterceptorState>) {
+    let interceptor = state.0.lock().unwrap();
+    interceptor.stop();
+}
 
 struct AppState {
     process_handle: Option<Child>,
@@ -158,15 +176,21 @@ fn main() {
     let app_state = Arc::new(Mutex::new(AppState::new()));
     let app_state_clone = app_state.clone(); // Clone app_state for use in the closure
     let _ = ensure_config_file_exists();
+    let interceptor = KeyInterceptor::new();
+    let interceptor_state: KeyInterceptorState =
+        KeyInterceptorState(Arc::new(Mutex::new(interceptor)));
 
     tauri::Builder::default()
         .manage(app_state) // Pass the cloned state to the Tauri app
+        .manage(interceptor_state)
         .invoke_handler(tauri::generate_handler![
             start_process,
             is_process_running,
             stop_process,
             read_config,
             save_config,
+            start_interception,
+            stop_interception,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

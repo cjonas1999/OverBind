@@ -92,7 +92,7 @@ function App() {
         { type: "error", message: args.join(" "), timestamp: Date.now() },
       ]);
       originalConsoleError(...args);
-    }
+    };
 
     const originalConsoleWarn = console.warn;
     console.warn = (...args) => {
@@ -101,7 +101,7 @@ function App() {
         { type: "warn", message: args.join(" "), timestamp: Date.now() },
       ]);
       originalConsoleWarn(...args);
-    }
+    };
 
     return () => {
       console.log = originalConsoleLog;
