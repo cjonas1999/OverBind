@@ -158,6 +158,8 @@ int main() {
     }
     config_file.close();
 
+
+    std::cout << "OverBind is running" << std::endl;
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
