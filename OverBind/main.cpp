@@ -106,14 +106,21 @@ int main() {
     client = vigem_alloc();
 
     if (client == nullptr) {
-        std::cerr << "Uh, not enough memory to do that?!" << std::endl;
+        std::cerr << "Not enough memory to launch virtual controller client." << std::endl;
+        MessageBoxA(NULL, "Not enough memory to launch virtual controller client.", "Error!", MB_ICONERROR | MB_OK);
         return -1;
     }
 
     const auto retval = vigem_connect(client);
 
     if (!VIGEM_SUCCESS(retval)) {
-        std::cerr << "ViGEm Bus connection failed with error code: 0x" << std::hex << retval << std::endl;
+        
+        std::stringstream ss;
+        ss << "ViGEm Bus connection failed with error code: 0x" << std::hex << retval;
+        ss << "\nYou may need to download the virtual gamepad driver here: https://github.com/nefarius/ViGEmBus/releases";
+        std::string errorText = ss.str();
+        std::cerr << errorText << std::endl;
+        MessageBoxA(NULL, errorText.c_str(), "Error!", MB_ICONERROR | MB_OK);
         return -1;
     }
 
@@ -125,7 +132,11 @@ int main() {
 
     // Error handling
     if (!VIGEM_SUCCESS(pir)) {
-        std::cerr << "Target plugin failed with error code: 0x" << std::hex << pir << std::endl;
+        std::stringstream ss;
+        ss << "Target plugin failed with error code: 0x" << std::hex << pir;
+        auto errorText = ss.str();
+        std::cerr << errorText << std::endl;
+        MessageBoxA(NULL, errorText.c_str(), "Error!", MB_ICONERROR | MB_OK);
         return -1;
     }
 
@@ -136,7 +147,8 @@ int main() {
 
     if (!config_file.is_open()) {
         std::cerr << "Config file could not be found" << std::endl;
-        return 1;
+        MessageBoxA(NULL, "Config file could not be found", "Error!", MB_ICONERROR | MB_OK);
+        return -1;
     }
 
     for (int i = 0; i < 3; i++) {
