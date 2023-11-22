@@ -13,12 +13,12 @@ Included with the executable will be `OverBind_conf.txt`, which is required in t
 
 Each row in this file corresponds to these controller inputs:
 ```
-[Left Analog left]
-[Left Analog right]
-[Right analog up]
+[Left Analog: Left]
+[Left Analog: Right]
+[Right Analog: Up]
 ```
 To customize these binds, you can find the list of [Virtual-Key Codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes) here.
 
-For reference the default binds are `Q,E,X`.
+For reference the default binds are Q, E, and X.
 
 If you don't want something bound, you can just put a `0` in that row.
