@@ -1,16 +1,29 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use std::{env, io}; // For working with the environment, including the current directory
+use std::process::{Command, Stdio, Child};
+use std::sync::{Arc, Mutex};
+use std::io::Read;
 use tauri::command;
-use std::env; // For working with the environment, including the current directory
+
+struct AppState {
+    process_handle: Option<Child>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        AppState { process_handle: None }
+    }
+}
 
 #[command(async)]
-fn run_overbind() -> Result<String, String> {
-    use std::process::{Command, Stdio};
+fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String, String> {
+    println!("Attempting to start process");
 
-    // Print the current working directory
-    match env::current_dir() {
-        Ok(pwd) => println!("Current working directory: {:?}", pwd),
-        Err(e) => println!("Error getting current directory: {}", e),
+    let mut app_state = state.lock().unwrap();
+    if app_state.process_handle.is_some() {
+        println!("Process is already running");
+        return Err("Process is already running".into());
     }
 
     // Adjust the path to the executable relative to the current working directory
@@ -23,24 +36,68 @@ fn run_overbind() -> Result<String, String> {
         Err(_) => return Err("Failed to get current directory".into()),
     };
 
-    let output = Command::new(exe_path)
+    let mut child = Command::new(exe_path)
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
-        .and_then(|child| child.wait_with_output());
+        .map_err(|e| {
+            println!("Failed to start C++ executable: {}", e);
+            format!("Failed to start C++ executable: {}", e)
+        })?;
 
-    match output {
-        Ok(output) => {
-            // Handle the output or result here if needed
-            Ok("C++ executable ran successfully".into())
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    app_state.process_handle = Some(child);
+
+    // Spawn a thread to asynchronously check for immediate errors
+    std::thread::spawn(move || {
+        let mut err = String::new();
+        let mut stderr_reader = io::BufReader::new(stderr);
+        stderr_reader.read_to_string(&mut err).unwrap();
+        if !err.is_empty() {
+            println!("Error from C++ executable: {}", err);
         }
-        Err(e) => Err(format!("Failed to run C++ executable: {}", e)),
-    }
+    });
 
+    println!("Process started successfully");
+    Ok("Process started successfully".into())
 }
 
+#[command]
+fn is_process_running(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> bool {
+    let app_state = state.lock().unwrap();
+    app_state.process_handle.is_some()
+}
+
+#[command]
+fn stop_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String, String> {
+    println!("Attempting to stop process");
+    let mut app_state = state.lock().unwrap();
+
+    if let Some(mut child) = app_state.process_handle.take() {
+        match child.kill() {
+            Ok(_) => {
+                let _ = child.wait(); // Wait for the process to terminate
+                println!("Process stopped successfully");
+                Ok("Process stopped successfully".into())
+            },
+            Err(e) => {
+                println!("Failed to stop process: {}", e);
+                Err(format!("Failed to stop process: {}", e))
+            },
+        }
+    } else {
+        println!("No process is running");
+        Err("No process is running".into())
+    }
+}
+
+
 fn main() {
+    let app_state = Arc::new(Mutex::new(AppState::new()));
+
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![run_overbind])
+        .manage(app_state)
+        .invoke_handler(tauri::generate_handler![start_process, is_process_running, stop_process])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

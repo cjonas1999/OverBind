@@ -38,6 +38,11 @@ h1 {
   text-align: center;
 }
 
+.err {
+  color: red;
+  white-space: pre-wrap;
+}
+
 .buttons {
   width: 100%;
   display: flex;
