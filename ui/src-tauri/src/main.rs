@@ -1,9 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::{env, io}; // For working with the environment, including the current directory
-use std::process::{Command, Stdio, Child};
-use std::sync::{Arc, Mutex};
 use std::io::Read;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::{env, io}; // For working with the environment, including the current directory
 use tauri::command;
 
 struct AppState {
@@ -12,7 +12,9 @@ struct AppState {
 
 impl AppState {
     fn new() -> Self {
-        AppState { process_handle: None }
+        AppState {
+            process_handle: None,
+        }
     }
 }
 
@@ -32,7 +34,7 @@ fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String
         Ok(mut path) => {
             path.push(relative_path);
             path
-        },
+        }
         Err(_) => return Err("Failed to get current directory".into()),
     };
 
@@ -79,11 +81,11 @@ fn stop_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String,
                 let _ = child.wait(); // Wait for the process to terminate
                 println!("Process stopped successfully");
                 Ok("Process stopped successfully".into())
-            },
+            }
             Err(e) => {
                 println!("Failed to stop process: {}", e);
                 Err(format!("Failed to stop process: {}", e))
-            },
+            }
         }
     } else {
         println!("No process is running");
@@ -91,13 +93,37 @@ fn stop_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String,
     }
 }
 
-
 fn main() {
     let app_state = Arc::new(Mutex::new(AppState::new()));
+    let app_state_clone = app_state.clone(); // Clone app_state for use in the closure
 
     tauri::Builder::default()
-        .manage(app_state)
-        .invoke_handler(tauri::generate_handler![start_process, is_process_running, stop_process])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .manage(app_state) // Pass the cloned state to the Tauri app
+        .invoke_handler(tauri::generate_handler![
+            start_process,
+            is_process_running,
+            stop_process
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(move |_app_handle, e| match e {
+            tauri::RunEvent::WindowEvent { event, .. } => match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    println!("Detected tauri::RunEvent::WindowEvent");
+                    let mut app_state = app_state_clone.lock().unwrap();
+                    if let Some(mut child) = app_state.process_handle.take() {
+                        match child.kill() {
+                            Ok(_) => {
+                                let _ = child.wait(); // Ensure the process is terminated
+                                println!("Child process killed successfully");
+                            }
+                            Err(err) => println!("Failed to kill child process: {}", err),
+                        }
+                    }
+                    api.prevent_close(); // Prevent the window from closing immediately
+                }
+                _ => {}
+            },
+            _ => {}
+        });
 }
