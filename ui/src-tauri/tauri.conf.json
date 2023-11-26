@@ -19,15 +19,43 @@
     },
     "bundle": {
       "active": true,
-      "targets": "all",
-      "identifier": "com.tauri.dev",
+      "targets": "msi",
+      "identifier": "com.github.cjonas1999.overbind",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
         "icons/128x128@2x.png",
         "icons/icon.icns",
         "icons/icon.ico"
-      ]
+      ],
+      "resources": [],
+      "externalBin": [],
+      "windows": {
+        "allowDowngrades": true,
+        "certificateThumbprint": null,
+        "digestAlgorithm": null,
+        "nsis": null,
+        "timestampUrl": null,
+        "tsp": false,
+        "webviewFixedRuntimePath": null,
+        "webviewInstallMode": {
+          "silent": true,
+          "type": "downloadBootstrapper"
+        },
+        "wix": null
+      }
+    },
+    "updater": {
+      "active": false,
+      "dialog": true,
+      "pubkey": "",
+      "windows": {
+        "installMode": "passive",
+        "installerArgs": []
+      }
+    },
+    "systemTray": {
+      "iconPath": "icons/32x32.png"
     },
     "security": {
       "csp": null

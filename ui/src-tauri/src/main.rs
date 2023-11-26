@@ -120,7 +120,6 @@ fn main() {
                             Err(err) => println!("Failed to kill child process: {}", err),
                         }
                     }
-                    api.prevent_close(); // Prevent the window from closing immediately
                 }
                 _ => {}
             },
