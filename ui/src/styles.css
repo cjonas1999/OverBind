@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
@@ -14,73 +18,9 @@
   -webkit-text-size-adjust: 100%;
 }
 
-.container {
-  margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-}
-
-.title {
+.overcharm-bg {
   background-image: url('/overcharm_background.png');
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 90px;
-}
-
-h1 {
-  text-align: center;
-}
-
-.err {
-  color: red;
-  white-space: pre-wrap;
-}
-
-.buttons {
-  width: 100%;
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #ffffff;
-  background-color: #0f0f0f98;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #0f0f0f69;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
 }
