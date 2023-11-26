@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use std::io::Read;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::{env, io}; // For working with the environment, including the current directory
@@ -17,6 +19,9 @@ impl AppState {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[command(async)]
 fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String, String> {
@@ -41,6 +46,7 @@ fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String
     let mut child = Command::new(exe_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map_err(|e| {
             println!("Failed to start C++ executable: {}", e);
