@@ -29,7 +29,7 @@ fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String
     }
 
     // Adjust the path to the executable relative to the current working directory
-    let relative_path = "OverBind.exe"; // Update this path accordingly
+    let relative_path = "OverBind_process.exe"; // Update this path accordingly
     let exe_path = match env::current_dir() {
         Ok(mut path) => {
             path.push(relative_path);

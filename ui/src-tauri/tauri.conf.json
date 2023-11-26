@@ -28,7 +28,10 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "resources": [],
+      "resources": [
+        "OverBind_conf.txt",
+        "OverBind_process.exe"
+      ],
       "externalBin": [],
       "windows": {
         "allowDowngrades": true,
