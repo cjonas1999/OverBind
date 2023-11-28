@@ -15,6 +15,12 @@
       "shell": {
         "all": false,
         "open": true
+      },
+      "fs": {
+        "all": true,
+        "scope": [
+          "$APPDATA/OverBind/*"
+        ]
       }
     },
     "bundle": {
@@ -29,7 +35,6 @@
         "icons/icon.ico"
       ],
       "resources": [
-        "OverBind_conf.txt",
         "OverBind_process.exe"
       ],
       "externalBin": [],
@@ -67,9 +72,12 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "overbind",
+        "title": "OverBind",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "label": "main",
+        "url": "index.html",
+        "focus": true
       }
     ]
   }

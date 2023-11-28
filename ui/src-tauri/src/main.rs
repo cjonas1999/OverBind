@@ -1,11 +1,15 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{BufRead, Read, Write};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::{env, io}; // For working with the environment, including the current directory
+use std::{env, io};
+use tauri::api::path::data_dir;
+// For working with the environment, including the current directory
 use tauri::command;
 
 struct AppState {
@@ -22,6 +26,18 @@ impl AppState {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn get_config_path() -> Result<PathBuf, String> {
+    match data_dir() {
+        Some(mut path) => {
+            path.push("OverBind"); // Use your app's unique folder name
+            std::fs::create_dir_all(&path).map_err(|e| e.to_string())?; // Create the dir if it doesn't exist
+            path.push("OverBind_conf.txt");
+            Ok(path)
+        }
+        None => Err("Failed to get user data directory".into()),
+    }
+}
 
 #[command(async)]
 fn start_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String, String> {
@@ -99,16 +115,58 @@ fn stop_process(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<String,
     }
 }
 
+#[command]
+fn read_config() -> Result<Vec<u32>, String> {
+    let config_path = get_config_path()?;
+    let file = File::open(config_path).map_err(|e| e.to_string())?;
+    let reader = io::BufReader::new(file);
+
+    let mut numbers = Vec::new();
+    for line in reader.lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        let num = u32::from_str_radix(&line, 16).map_err(|e| e.to_string())?;
+        numbers.push(num);
+    }
+
+    Ok(numbers)
+}
+
+#[command]
+fn save_config(codes: Vec<u32>) -> Result<(), String> {
+    let config_path = get_config_path()?;
+
+    let mut file = File::create(config_path).map_err(|e| e.to_string())?;
+
+    for num in codes {
+        writeln!(file, "{:X}", num).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn ensure_config_file_exists() -> Result<(), String> {
+    let config_path = get_config_path()?;
+    if !config_path.exists() {
+        // Assuming 'include_str!' is used to include the file contents in the binary
+        let default_contents = include_str!("../OverBind_conf.txt");
+        fs::write(config_path, default_contents).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn main() {
     let app_state = Arc::new(Mutex::new(AppState::new()));
     let app_state_clone = app_state.clone(); // Clone app_state for use in the closure
+    let _ = ensure_config_file_exists();
 
     tauri::Builder::default()
         .manage(app_state) // Pass the cloned state to the Tauri app
         .invoke_handler(tauri::generate_handler![
             start_process,
             is_process_running,
-            stop_process
+            stop_process,
+            read_config,
+            save_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
