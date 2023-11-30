@@ -2,37 +2,40 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState } from "react";
 import KeybindSettings from "./Edit";
 
+let init = false;
+
 function App() {
-  const runOverbind = () => {
-    invoke("start_process")
-      .then((response) => {
-        console.log(response); // Log or handle the success response
-        setErr("");
-        updateIsOverbindRunning();
-      })
-      .catch((error) => {
-        console.error(error); // Handle the error case
-        setErr(error);
-      });
+  const runOverbind = async () => {
+    try {
+      const response = await invoke("start_process");
+      console.log(response); // Log or handle the success response
+      setErr("");
+      await updateIsOverbindRunning();
+    } catch (error) {
+      console.error(error); // Handle the error case
+      setErr(error as string);
+    }
   };
 
-  const stopOverbind = () => {
-    invoke("stop_process")
-      .then((response) => {
-        console.log(response);
-        setErr("");
-        updateIsOverbindRunning();
-      })
-      .catch((error) => {
-        console.error(error);
-        setErr(error);
-      });
+  const stopOverbind = async () => {
+    try {
+      const response = await invoke("stop_process");
+      console.log(response);
+      setErr("");
+      await updateIsOverbindRunning();
+    } catch (error) {
+      console.error(error);
+      setErr(error as string);
+    }
   };
 
-  const updateIsOverbindRunning = () => {
-    invoke("is_process_running")
-      .then((response) => setIsOverbindRunning(response as boolean))
-      .catch((err) => console.error(err));
+  const updateIsOverbindRunning = async () => {
+    try {
+      const response = await invoke("is_process_running");
+      setIsOverbindRunning(response as boolean);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   const formatErrorMessage = (errorMessage: string) => {
@@ -50,7 +53,12 @@ function App() {
   const [isEditingBinds, setIsEditingBinds] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
-    updateIsOverbindRunning();
+    updateIsOverbindRunning().then(() => {
+      if (!init) {
+        init = true;
+        runOverbind();
+      }
+    });
   }, []);
 
   return (
@@ -102,10 +110,10 @@ function App() {
       {isEditingBinds && (
         <KeybindSettings
           onCancel={() => setIsEditingBinds(false)}
-          onSave={() => {
+          onSave={async () => {
             setIsEditingBinds(false);
             if (isOverbindRunning) {
-              stopOverbind();
+              await stopOverbind();
             }
           }}
           onErr={setErr}
