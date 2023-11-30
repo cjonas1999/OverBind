@@ -3,6 +3,8 @@ A utility that allows binding keyboard buttons to virtual Xbox360 controller joy
 
 Built specifically with Hollow Knight speedruns in mind.
 
+Note: this is for Windows only.
+
 ## How to Install
 First, you must install the [ViGEmBus driver](https://github.com/nefarius/ViGEmBus/releases). This is necessary for the controller emulation to function.
 
