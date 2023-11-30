@@ -41,9 +41,10 @@ function KeybindSettings({
           binds.map((oldBind, i) => ({
             ...oldBind,
             keyCode: configBinds[i],
-            keyName: Object.keys(WINDOWS_ECMA_KEYMAP).find(
-              (key) => WINDOWS_ECMA_KEYMAP[key] === configBinds[i],
-            )!,
+            keyName:
+              Object.keys(WINDOWS_ECMA_KEYMAP).find(
+                (key) => WINDOWS_ECMA_KEYMAP[key] === configBinds[i],
+              ) ?? "-",
           })),
         );
       })
@@ -148,18 +149,39 @@ function KeybindSettings({
                   ? "..."
                   : bind.keyCode.toString(16)}
               </td>
-              <td className="px-4 py-2">
+              <td className="flex justify-center gap-2.5 px-4 py-2">
                 {bind.id === activeKeybindId ? (
-                  <button
-                    onClick={cancelChangeKey}
-                    className="rounded bg-red-300 px-4 py-2 font-bold text-black hover:bg-red-500"
-                  >
-                    Cancel
-                  </button>
+                  <>
+                    <button
+                      onClick={cancelChangeKey}
+                      className="rounded bg-rose-800 px-4 py-2 font-bold text-white hover:bg-rose-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBinds(
+                          binds.map((bind) =>
+                            bind.id === activeKeybindId
+                              ? {
+                                  ...bind,
+                                  keyName: "-",
+                                  keyCode: 0,
+                                }
+                              : bind,
+                          ),
+                        );
+                        setActiveKeybindId(undefined);
+                      }}
+                      className="rounded bg-orange-800 px-4 py-2 font-bold text-white hover:bg-orange-500"
+                    >
+                      Unbind
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => handleChangeKey(bind.id)}
-                    className="rounded bg-purple-700 px-4 py-2 font-bold text-white hover:bg-blue-700"
+                    className="rounded bg-purple-700 px-4 py-2 font-bold text-white hover:bg-purple-500"
                   >
                     Change Key
                   </button>
