@@ -68,28 +68,37 @@ function App() {
       </div>
 
       {isOverbindRunning ? (
-        <p>Overbind executable currently running</p>
+        <div className="flex items-center justify-center gap-2 text-2xl">
+          <div className="h-4 w-4 rounded-full bg-green-500 shadow-[0_0_8px_2px_rgba(0,255,0,0.6)]" />
+          Enabled
+        </div>
       ) : (
-        <p>Click on button to launch the Overbind executable</p>
+        <div className="flex items-center justify-center gap-2 text-2xl">
+          <div className="h-4 w-4 rounded-full bg-gray-500" />
+          Disabled
+        </div>
       )}
 
-      <div className="flex w-full justify-center gap-2.5">
-        <button
-          className="font-mediumtext-white rounded-md bg-purple-500 bg-opacity-60 px-5 py-2.5
+      <div className="mt-4 flex w-full justify-center gap-2.5">
+        {!isOverbindRunning ? (
+          <button
+            className="font-mediumtext-white rounded-md bg-purple-500 bg-opacity-60 px-5 py-2.5
             text-base shadow outline-none transition-colors
             hover:bg-purple-600 active:bg-purple-800 active:bg-opacity-40"
-          onClick={runOverbind}
-        >
-          Launch
-        </button>
-        <button
-          className="rounded-md bg-red-500 bg-opacity-60 px-5 py-2.5 text-base font-medium
+            onClick={runOverbind}
+          >
+            Launch
+          </button>
+        ) : (
+          <button
+            className="rounded-md bg-red-500 bg-opacity-60 px-5 py-2.5 text-base font-medium
             text-white shadow outline-none transition-colors
             hover:bg-red-600 active:bg-red-800 active:bg-opacity-40"
-          onClick={stopOverbind}
-        >
-          Stop
-        </button>
+            onClick={stopOverbind}
+          >
+            Stop
+          </button>
+        )}
         <button
           className="font-mediumtext-white rounded-md bg-yellow-500 bg-opacity-60 px-5 py-2.5
           text-base shadow outline-none transition-colors
