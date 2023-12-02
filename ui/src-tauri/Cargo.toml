@@ -5,7 +5,7 @@ description = "Bind keyboard buttons to Xbox360 controller inputs"
 authors = ["arnabp", "cjonas1999"]
 license = ""
 repository = "https://github.com/cjonas1999/OverBind"
-edition = "2023"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
