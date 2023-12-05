@@ -137,7 +137,7 @@ function KeybindSettings({
           </tr>
         </thead>
         <tbody>
-          {binds.map((bind, i) => (
+          {binds.map((bind) => (
             <tr
               key={bind.id}
               className="border-b border-indigo-950 bg-indigo-800 bg-opacity-60"
