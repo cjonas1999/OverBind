@@ -24,3 +24,7 @@
   background-position: center;
   background-size: contain;
 }
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera*/
+}

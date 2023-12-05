@@ -4,6 +4,12 @@ import KeybindSettings from "./Edit";
 
 let init = false;
 
+type LogEntry = {
+  type: "log" | "error" | "warn"; // Add more types as needed
+  message: string;
+  timestamp: number;
+};
+
 function App() {
   const runOverbind = async () => {
     try {
@@ -61,6 +67,33 @@ function App() {
     });
   }, []);
 
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLogVisible, setIsLogVisible] = useState(false);
+
+  const toggleLogs = () => {
+    console.log(`${!isLogVisible ? "Enabling" : "Disabling"} console logs`);
+    setIsLogVisible(!isLogVisible);
+  };
+
+  useEffect(() => {
+    const originalConsoleLog = console.log;
+
+    console.log = (...args) => {
+      setLogs((prevLogs) => [
+        ...prevLogs,
+        { type: "log", message: args.join(" "), timestamp: Date.now() },
+      ]);
+      originalConsoleLog(...args);
+    };
+
+    // Do the same for console.error, console.warn, etc. if needed
+
+    return () => {
+      console.log = originalConsoleLog;
+      // Reset other console methods if overridden
+    };
+  }, []);
+
   return (
     <div className="justify-centerpt-[10vh] m-0 flex flex-col text-center">
       <div className="overcharm-bg flex h-[90px] items-center justify-center">
@@ -82,8 +115,8 @@ function App() {
       <div className="mt-4 flex w-full justify-center gap-2.5">
         {!isOverbindRunning ? (
           <button
-            className="font-mediumtext-white rounded-md bg-purple-500 bg-opacity-60 px-5 py-2.5
-            text-base shadow outline-none transition-colors
+            className="rounded-md bg-purple-500 bg-opacity-60 px-5 py-2.5 text-base font-medium
+            text-white shadow outline-none transition-colors
             hover:bg-purple-600 active:bg-purple-800 active:bg-opacity-40"
             onClick={runOverbind}
           >
@@ -100,12 +133,20 @@ function App() {
           </button>
         )}
         <button
-          className="font-mediumtext-white rounded-md bg-yellow-500 bg-opacity-60 px-5 py-2.5
-          text-base shadow outline-none transition-colors
+          className="rounded-md bg-yellow-500 bg-opacity-60 px-5 py-2.5 text-base font-medium
+          text-white shadow outline-none transition-colors
           hover:bg-yellow-600 active:bg-yellow-800"
           onClick={() => setIsEditingBinds(!isEditingBinds)}
         >
           Edit
+        </button>
+        <button
+          className="rounded-md bg-slate-800 bg-opacity-90 px-5 py-2.5 text-base font-medium
+          text-white shadow outline-none transition-colors
+          hover:bg-slate-600 active:bg-slate-600"
+          onClick={toggleLogs}
+        >
+          Logs
         </button>
       </div>
 
@@ -127,6 +168,30 @@ function App() {
           }}
           onErr={setErr}
         />
+      )}
+
+      {isLogVisible && (
+        <div className="scrollbar-hide scroll overflow mx-12 mt-10 h-80 overflow-scroll bg-zinc-900 p-5 text-left font-mono">
+          {logs
+            .slice()
+            .reverse()
+            .map((log) => (
+              <div
+                key={log.timestamp}
+                className={`mb-2 ${
+                  log.type === "log"
+                    ? "text-blue-500"
+                    : log.type === "warn"
+                      ? "text-yellow-500"
+                      : log.type === "error"
+                        ? "text-red-500"
+                        : "text-white"
+                }`}
+              >
+                {log.timestamp}. {log.message}
+              </div>
+            ))}
+        </div>
       )}
     </div>
   );

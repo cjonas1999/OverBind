@@ -62,6 +62,7 @@ function KeybindSettings({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       let name = event.code;
+      console.log(`Detected key ${name}`);
       let winKeyCode = WINDOWS_ECMA_KEYMAP[name];
       if (!winKeyCode) {
         name = event.key;
@@ -115,6 +116,7 @@ function KeybindSettings({
   }, [activeKeybindId, binds, activeMods]);
 
   const handleChangeKey = (id: number) => {
+    console.log(`Listening for keybind ${id}`);
     setActiveKeybindId(id);
   };
 
@@ -135,7 +137,7 @@ function KeybindSettings({
           </tr>
         </thead>
         <tbody>
-          {binds.map((bind) => (
+          {binds.map((bind, i) => (
             <tr
               key={bind.id}
               className="border-b border-indigo-950 bg-indigo-800 bg-opacity-60"
