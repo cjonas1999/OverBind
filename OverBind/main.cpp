@@ -38,7 +38,7 @@ LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam)
 
     KBDLLHOOKSTRUCT kbdStruct = *((KBDLLHOOKSTRUCT *)lParam);
 
-    if (wParam == WM_KEYUP)
+    if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
     {
         for (int i = 0; i < 3; i++)
         {
@@ -49,7 +49,7 @@ LRESULT __stdcall HookProc(int nCode, WPARAM wParam, LPARAM lParam)
         }
     }
 
-    if (wParam == WM_KEYDOWN)
+    if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
     {
         for (int i = 0; i < 3; i++)
         {
