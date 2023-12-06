@@ -77,7 +77,6 @@ function App() {
 
   useEffect(() => {
     const originalConsoleLog = console.log;
-
     console.log = (...args) => {
       setLogs((prevLogs) => [
         ...prevLogs,
@@ -86,7 +85,23 @@ function App() {
       originalConsoleLog(...args);
     };
 
-    // Do the same for console.error, console.warn, etc. if needed
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      setLogs((prevLogs) => [
+        ...prevLogs,
+        { type: "error", message: args.join(" "), timestamp: Date.now() },
+      ]);
+      originalConsoleError(...args);
+    }
+
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args) => {
+      setLogs((prevLogs) => [
+        ...prevLogs,
+        { type: "warn", message: args.join(" "), timestamp: Date.now() },
+      ]);
+      originalConsoleWarn(...args);
+    }
 
     return () => {
       console.log = originalConsoleLog;
