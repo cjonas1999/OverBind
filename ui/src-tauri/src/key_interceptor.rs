@@ -10,15 +10,15 @@ use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
         CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT,
-        WH_KEYBOARD_LL, WM_KEYDOWN,
+        WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
     },
 };
 
 static STICK_NEUTRAL: i16 = 0;
 static STICK_LEFT: i16 = -29000;
 static STICK_RIGHT: i16 = 29000;
-static STICK_UP: i16 = -29000;
-static STICK_DOWN: i16 = 29000;
+static STICK_UP: i16 = 29000;
+static STICK_DOWN: i16 = -29000;
 static KEYBIND_LEFT_STICK_LEFT: usize = 0;
 static KEYBIND_LEFT_STICK_RIGHT: usize = 1;
 static KEYBIND_RIGHT_STICK_UP: usize = 2;
@@ -65,7 +65,6 @@ impl KeyInterceptor {
 
         // Initialize the gamepad state
         let gamepad = vigem_client::XGamepad {
-            buttons: vigem_client::XButtons!(UP | RIGHT | LB | A | X),
             ..Default::default()
         };
 
@@ -81,14 +80,16 @@ impl KeyInterceptor {
         let path = Path::new("OverBind_conf.txt");
         let file = File::open(&path).map_err(|e| e.to_string())?;
         let reader = BufReader::new(file);
-        let keybinds = reader
-            .lines()
-            .map(|line| {
-                line.expect("Unable to read line")
-                    .parse::<u32>()
-                    .expect("Failed to parse keybinding")
-            })
-            .collect::<Vec<u32>>();
+        let mut keybinds = Vec::new();
+        for line in reader.lines() {
+            let line = line.map_err(|e| e.to_string())?.trim().to_owned();
+
+            if let Ok(value) = u32::from_str_radix(&line, 16) {
+                keybinds.push(value);
+            } else {
+                return Err(format!("Failed to parse keybinding: {}", line));
+            }
+        }
         *KEYBINDS.lock().unwrap() = keybinds;
 
         self.should_run.store(true, Ordering::SeqCst);
@@ -142,20 +143,24 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     let kbd_struct = l_param.0 as *const KBDLLHOOKSTRUCT;
     println!("Key {:?} {:?}", w_param, (*kbd_struct).vkCode);
 
-    if w_param.0 as u32 == WM_KEYDOWN {
-        for i in 0..2 {
-            if (*kbd_struct).vkCode == keybinds[i] {
-                KEY_HELD[i] = true;
+    match w_param.0 as u32 {
+        WM_KEYUP | WM_SYSKEYUP => {
+            for i in 0..3 {
+                if (*kbd_struct).vkCode == keybinds[i] {
+                    KEY_HELD[i] = false;
+                }
             }
         }
-    }
 
-    if w_param.0 as u32 == WM_KEYDOWN {
-        for i in 0..2 {
-            if (*kbd_struct).vkCode == keybinds[i] {
-                KEY_HELD[i] = true;
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            for i in 0..3 {
+                if (*kbd_struct).vkCode == keybinds[i] {
+                    KEY_HELD[i] = true;
+                }
             }
         }
+
+        _ => return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param),
     }
 
     let mut left_stick_x: i16 = STICK_NEUTRAL;
