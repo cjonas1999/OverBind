@@ -13,7 +13,7 @@ type LogEntry = {
 function App() {
   const runOverbind = async () => {
     try {
-      const response = await invoke("start_process");
+      const response = await invoke("start_interception");
       console.log(response); // Log or handle the success response
       setErr("");
       await updateIsOverbindRunning();
@@ -25,7 +25,7 @@ function App() {
 
   const stopOverbind = async () => {
     try {
-      const response = await invoke("stop_process");
+      const response = await invoke("stop_interception");
       console.log(response);
       setErr("");
       await updateIsOverbindRunning();
@@ -37,7 +37,7 @@ function App() {
 
   const updateIsOverbindRunning = async () => {
     try {
-      const response = await invoke("is_process_running");
+      const response = await invoke("is_interceptor_running");
       setIsOverbindRunning(response as boolean);
     } catch (error) {
       console.error(error);
@@ -58,14 +58,6 @@ function App() {
   const [isOverbindRunning, setIsOverbindRunning] = useState(false);
   const [isEditingBinds, setIsEditingBinds] = useState(false);
   const [err, setErr] = useState("");
-  useEffect(() => {
-    updateIsOverbindRunning().then(() => {
-      if (!init) {
-        init = true;
-        runOverbind();
-      }
-    });
-  }, []);
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLogVisible, setIsLogVisible] = useState(false);

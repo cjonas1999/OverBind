@@ -2,23 +2,15 @@ use once_cell::sync::Lazy;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::ptr::null;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use vigem_client::Client;
-use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::Foundation::{GetLastError, HWND};
-use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExA, CreateWindowExW, DestroyWindow, HWND_MESSAGE, WS_DISABLED, WS_EX_NOACTIVATE,
-};
 
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
-    System::Threading::GetCurrentThreadId,
     UI::WindowsAndMessaging::{
-        CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-        UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN,
-        WM_KEYUP,
+        CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK, KBDLLHOOKSTRUCT,
+        WH_KEYBOARD_LL, WM_KEYDOWN,
     },
 };
 
@@ -48,52 +40,8 @@ static SHARED_STATE: Lazy<Arc<Mutex<SharedState>>> = Lazy::new(|| {
     }))
 });
 
-/// Wrapper around a HWND windows pointer that destroys the window on drop
-struct HwndDropper(HWND);
-unsafe impl Send for HwndDropper {}
-impl Drop for HwndDropper {
-    fn drop(&mut self) {
-        if !(self.0 == HWND::default()) {
-            let _ = unsafe { DestroyWindow(self.0) };
-        }
-    }
-}
-
-/// Try to create a hidden "message-only" window
-///
-fn create_hidden_window() -> Result<HwndDropper, ()> {
-    let class_name = "Static\0".encode_utf16().collect::<Vec<u16>>();
-    let window_name = "\0".encode_utf16().collect::<Vec<u16>>();
-
-    let hwnd = unsafe {
-        // Get the current module handle
-        CreateWindowExW(
-            WS_EX_NOACTIVATE,
-            PCWSTR(class_name.as_ptr()),
-            PCWSTR(window_name.as_ptr()),
-            WS_DISABLED,
-            0,
-            0,
-            0,
-            0,
-            HWND_MESSAGE,
-            None,
-            HINSTANCE::default(),
-            None,
-        )
-    };
-    if hwnd == HWND::default() {
-        let error = unsafe { GetLastError() };
-        println!("Failed to create hidden window. Error code: {:?}", error);
-        Err(())
-    } else {
-        println!("Succeeded in creating hidden window");
-        Ok(HwndDropper(hwnd))
-    }
-}
-
 pub(crate) struct KeyInterceptor {
-    should_run: Arc<AtomicBool>,
+    pub should_run: Arc<AtomicBool>,
 }
 
 impl KeyInterceptor {
@@ -121,21 +69,9 @@ impl KeyInterceptor {
             ..Default::default()
         };
 
-        // Set the hook and store the handle
-        let hook = unsafe {
-            SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(low_level_keyboard_proc_callback),
-                HINSTANCE::default(),
-                GetCurrentThreadId(),
-            )
-        }
-        .map_err(|e| e.to_string())?;
-
         let mut shared_state = SHARED_STATE.lock().unwrap();
         shared_state.target = Some(target);
         shared_state.gamepad = Some(gamepad);
-        shared_state.hook_handle = Some(hook);
 
         Ok(())
     }
@@ -157,22 +93,34 @@ impl KeyInterceptor {
 
         self.should_run.store(true, Ordering::SeqCst);
 
-        // Message loop
-        let mut message: MSG = unsafe { std::mem::zeroed() };
-        while self.should_run.load(Ordering::SeqCst)
-            && unsafe { GetMessageW(&mut message, None, 0, 0).into() }
-        {
-            unsafe {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
+        // Set the hook and store the handle
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_KEYBOARD_LL,
+                Some(low_level_keyboard_proc_callback),
+                HINSTANCE::default(),
+                0,
+            )
         }
+        .map_err(|e| e.to_string())?;
+        let mut shared_state = SHARED_STATE.lock().unwrap();
+        shared_state.hook_handle = Some(hook);
 
         Ok(())
     }
 
     pub fn stop(&self) {
-        self.should_run.store(false, Ordering::SeqCst);
+        let mut shared_state = SHARED_STATE.lock().unwrap();
+        if let Some(hook_handle) = shared_state.hook_handle.take() {
+            unsafe {
+                let _ = UnhookWindowsHookEx(hook_handle);
+            }
+        }
+    }
+
+    pub fn is_running(&self) -> bool {
+        let shared_state = SHARED_STATE.lock().unwrap();
+        shared_state.hook_handle.is_some()
     }
 }
 
