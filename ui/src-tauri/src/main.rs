@@ -99,6 +99,7 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(interceptor_state)
         .invoke_handler(tauri::generate_handler![
             read_config,
