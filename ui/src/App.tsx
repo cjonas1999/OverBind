@@ -182,9 +182,9 @@ function App() {
           {logs
             .slice()
             .reverse()
-            .map((log) => (
+            .map((log, i) => (
               <div
-                key={log.timestamp}
+                key={i}
                 className={`mb-2 ${
                   log.type === "log"
                     ? "text-blue-500"

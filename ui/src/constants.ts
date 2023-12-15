@@ -106,4 +106,53 @@ export const MOD_KEYS: Set<number> = new Set([
   0x11, // Control
   0x10, // Shift
   0x5B, // Windows
-])
+]);
+
+const FACE_BUTTONS: Record<string, number> = {
+  DPAD_UP: 0x0001,
+  DPAD_DOWN: 0x0002,
+  DPAD_LEFT: 0x0004,
+  DPAD_RIGHT: 0x0008,
+  START: 0x0010,
+  BACK: 0x0020,
+  LEFT_THUMB: 0x0040,
+  RIGHT_THUMB: 0x0080,
+  LEFT_SHOULDER: 0x0100,
+  RIGHT_SHOULDER: 0x0200,
+  GUIDE: 0x0400,
+  A: 0x1000,
+  B: 0x2000,
+  X: 0x4000,
+  Y: 0x8000,
+};
+
+const STICK_DISTANCE = 29000;
+const TRIGGER_DISTANCE = 255;
+
+export const CONTROLLER_INPUTS: Record<string, { result_type: string; result_value: number }> = {
+  'DPAD UP': { result_type: 'face_button', result_value: FACE_BUTTONS.DPAD_UP },
+  'DPAD DOWN': { result_type: 'face_button', result_value: FACE_BUTTONS.DPAD_DOWN },
+  'DPAD LEFT': { result_type: 'face_button', result_value: FACE_BUTTONS.DPAD_LEFT },
+  'DPAD RIGHT': { result_type: 'face_button', result_value: FACE_BUTTONS.DPAD_RIGHT },
+  'START': { result_type: 'face_button', result_value: FACE_BUTTONS.START },
+  'BACK': { result_type: 'face_button', result_value: FACE_BUTTONS.BACK },
+  'LEFT THUMB': { result_type: 'face_button', result_value: FACE_BUTTONS.LEFT_THUMB },
+  'RIGHT THUMB': { result_type: 'face_button', result_value: FACE_BUTTONS.RIGHT_THUMB },
+  'LEFT SHOULDER': { result_type: 'face_button', result_value: FACE_BUTTONS.LEFT_SHOULDER },
+  'RIGHT SHOULDER': { result_type: 'face_button', result_value: FACE_BUTTONS.RIGHT_SHOULDER },
+  'GUIDE': { result_type: 'face_button', result_value: FACE_BUTTONS.GUIDE },
+  'A': { result_type: 'face_button', result_value: FACE_BUTTONS.A },
+  'B': { result_type: 'face_button', result_value: FACE_BUTTONS.B },
+  'X': { result_type: 'face_button', result_value: FACE_BUTTONS.X },
+  'Y': { result_type: 'face_button', result_value: FACE_BUTTONS.Y },
+  'LEFT STICK UP': { result_type: 'thumb_ly', result_value: STICK_DISTANCE },
+  'LEFT STICK DOWN': { result_type: 'thumb_ly', result_value: -STICK_DISTANCE },
+  'LEFT STICK LEFT': { result_type: 'thumb_lx', result_value: -STICK_DISTANCE },
+  'LEFT STICK RIGHT': { result_type: 'thumb_lx', result_value: STICK_DISTANCE },
+  'RIGHT STICK UP': { result_type: 'thumb_ry', result_value: STICK_DISTANCE },
+  'RIGHT STICK DOWN': { result_type: 'thumb_ry', result_value: -STICK_DISTANCE },
+  'RIGHT STICK LEFT': { result_type: 'thumb_rx', result_value: -STICK_DISTANCE },
+  'RIGHT STICK RIGHT': { result_type: 'thumb_rx', result_value: STICK_DISTANCE },
+  'LEFT TRIGGER': { result_type: 'trigger_l', result_value: TRIGGER_DISTANCE },
+  'RIGHT TRIGGER': { result_type: 'trigger_r', result_value: TRIGGER_DISTANCE },
+};
