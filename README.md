@@ -1,5 +1,5 @@
 ## What is OverBind?
-A utility that allows binding keyboard buttons to virtual Xbox360 controller joystick outputs. Makes use of [ViGEmBus](https://github.com/nefarius/ViGEmBus/) and [ViGEmClient](https://github.com/nefarius/ViGEmClient). Keybinds are easily customizeable within the app's UI.
+A utility that allows binding keyboard buttons to virtual Xbox360 controller joystick outputs. Makes use of [ViGEmBus](https://github.com/nefarius/ViGEmBus/) and [ViGEmClient](https://github.com/CasualX/vigem-client). Keybinds are easily customizeable within the app's UI.
 
 Built specifically with Hollow Knight speedruns in mind.
 
