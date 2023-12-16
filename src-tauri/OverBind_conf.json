@@ -13,10 +13,5 @@
         "keycode": "58",
         "result_type": "thumb_ry",
         "result_value": 29000
-    },
-    {
-        "keycode": "20",
-        "result_type": "face_button",
-        "result_value": 4096
     }
 ]

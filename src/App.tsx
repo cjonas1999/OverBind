@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState } from "react";
-import KeybindSettings from "./Edit";
+import KeybindSettings from "./components/Edit";
 
 let init = false;
 

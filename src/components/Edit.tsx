@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api";
 import { useEffect, useState } from "react";
-import { MOD_KEYS, WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "./constants";
+import { MOD_KEYS, WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
+import Dropdown from "./Dropdown";
 
 interface Keybind {
   id: number;
@@ -35,8 +36,6 @@ function KeybindSettings({
       keycode: bind.keyCode.toString(16),
       ...CONTROLLER_INPUTS[bind.name],
     }));
-
-    console.log(JSON.stringify(configToSave));
 
     invoke("save_config", { configs: configToSave })
       .then(() => onSave())
@@ -91,9 +90,10 @@ function KeybindSettings({
         winKeyCode = WINDOWS_ECMA_KEYMAP[name];
       }
       if (winKeyCode) {
-        if (MOD_KEYS.has(winKeyCode)) {
-          setActiveMods(new Set(activeMods.add(winKeyCode)));
-        } else if (activeKeybindId !== undefined) {
+        // if (MOD_KEYS.has(winKeyCode)) {
+        //   setActiveMods(new Set(activeMods.add(winKeyCode)));
+        // } else
+        if (activeKeybindId !== undefined) {
           // Record the key along with active mod keys
           const newKeybinds = binds.map((bind) =>
             bind.id === activeKeybindId
@@ -137,8 +137,12 @@ function KeybindSettings({
     };
   }, [activeKeybindId, binds, activeMods]);
 
-  const handleChangeKey = (id: number) => {
+  const handleChangeKey = (
+    id: number,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => {
     console.log(`Listening for keybind ${id}`);
+    (event.target as HTMLButtonElement).blur();
     setActiveKeybindId(id);
   };
 
@@ -165,33 +169,21 @@ function KeybindSettings({
               className="border-b border-indigo-950 bg-indigo-800 bg-opacity-60"
             >
               <td className="px-4 py-2">
-                <select
-                  name="name"
-                  id="name"
-                  className="bg-transparent"
-                  value={bind.name}
-                  onChange={(e) => {
+                <Dropdown
+                  options={Object.keys(CONTROLLER_INPUTS)}
+                  selected={bind.name}
+                  onChange={(option) => {
                     const newKeybinds = binds.map((b) =>
                       b.id === bind.id
                         ? {
                             ...b,
-                            name: e.target.value,
+                            name: option,
                           }
                         : b,
                     );
                     setBinds(newKeybinds);
                   }}
-                >
-                  {Object.keys(CONTROLLER_INPUTS).map((name) => (
-                    <option
-                      key={name}
-                      value={name}
-                      className="bg-indigo-800 bg-opacity-60 hover:bg-indigo-700"
-                    >
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                />
               </td>
               <td className="px-4 py-2">
                 {bind.id === activeKeybindId ? "..." : bind.keyName}
@@ -233,7 +225,7 @@ function KeybindSettings({
                 ) : (
                   <>
                     <button
-                      onClick={() => handleChangeKey(bind.id)}
+                      onClick={(event) => handleChangeKey(bind.id, event)}
                       className="rounded bg-purple-700 px-4 py-2 font-bold text-white hover:bg-purple-500"
                     >
                       Rebind
