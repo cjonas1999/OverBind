@@ -10,7 +10,21 @@ const Dropdown = ({
   onChange: (option: string) => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownDirection, setDropdownDirection] = useState("down");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const toggleDropdown = () => {
+    if (!isOpen && buttonRef.current && dropdownRef.current) {
+      const dropdownRect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - dropdownRect.bottom;
+      const spaceNeeded = 240; // max-h-60
+
+      setDropdownDirection(spaceBelow >= spaceNeeded ? "down" : "up");
+    }
+
+    setIsOpen(!isOpen);
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -31,8 +45,9 @@ const Dropdown = ({
   return (
     <div className="relative" ref={dropdownRef}>
       <button
+        ref={buttonRef}
         className="inline-flex w-full justify-center gap-x-1.5 rounded-md bg-blue-900 px-4 py-2  shadow-sm hover:bg-blue-800"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleDropdown}
       >
         {selected}
         <svg
@@ -50,7 +65,11 @@ const Dropdown = ({
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 mt-1 w-full rounded-md bg-blue-900 shadow-lg">
+        <div
+          className={`absolute z-10 w-full rounded-md bg-blue-900 shadow-lg ${
+            dropdownDirection === "up" ? "bottom-full mb-1" : "mt-1"
+          }`}
+        >
           <div className="scrollbar-hide scroll overflow max-h-60 overflow-scroll rounded-md py-1 text-base">
             {options.map((option) => (
               <a

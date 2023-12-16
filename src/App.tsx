@@ -101,6 +101,13 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!init) {
+      init = true;
+      runOverbind();
+    }
+  }, []);
+
   return (
     <div className="justify-centerpt-[10vh] m-0 flex flex-col text-center">
       <div className="overcharm-bg flex h-[90px] items-center justify-center">

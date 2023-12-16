@@ -1,17 +1,17 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use std::env;
 #[cfg(target_os = "windows")]
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::{env, io};
 use tauri::api::path::data_dir;
 mod key_interceptor;
 
 use crate::key_interceptor::KeyInterceptor;
 use serde::{Deserialize, Serialize};
-use tauri::{command, State};
+use tauri::State;
 
 #[derive(Serialize, Deserialize)]
 struct KeyConfig {
