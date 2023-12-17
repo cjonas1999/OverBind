@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 import { MOD_KEYS, WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
 import Dropdown from "./Dropdown";
 
+type BindType = "controller" | "keyboard" | undefined;
+
 interface Keybind {
   id: number;
+  type: BindType;
   name: string;
   keyName: string;
   keyCode: number;
@@ -17,9 +20,27 @@ interface ConfigBind {
 }
 
 const DEFAULT_BINDS: Keybind[] = [
-  { id: 0, name: "LEFT STICK LEFT", keyName: "q", keyCode: 0x51 },
-  { id: 1, name: "LEFT STICK RIGHT", keyName: "e", keyCode: 0x45 },
-  { id: 2, name: "RIGHT STICK UP", keyName: "x", keyCode: 0x58 },
+  {
+    id: 0,
+    type: "controller",
+    name: "LEFT STICK LEFT",
+    keyName: "q",
+    keyCode: 0x51,
+  },
+  {
+    id: 1,
+    type: "controller",
+    name: "LEFT STICK RIGHT",
+    keyName: "e",
+    keyCode: 0x45,
+  },
+  {
+    id: 2,
+    type: "controller",
+    name: "RIGHT STICK UP",
+    keyName: "x",
+    keyCode: 0x58,
+  },
 ];
 
 function KeybindSettings({
@@ -34,7 +55,12 @@ function KeybindSettings({
   const handleSave = () => {
     const configToSave = binds.map((bind) => ({
       keycode: bind.keyCode.toString(16),
-      ...CONTROLLER_INPUTS[bind.name],
+      ...(bind.type === "controller"
+        ? CONTROLLER_INPUTS[bind.name]
+        : {
+            result_type: "keyboard",
+            result_value: WINDOWS_ECMA_KEYMAP[bind.name],
+          }),
     }));
 
     invoke("save_config", { configs: configToSave })
@@ -54,14 +80,24 @@ function KeybindSettings({
               Object.keys(WINDOWS_ECMA_KEYMAP).find(
                 (key) => WINDOWS_ECMA_KEYMAP[key] === keyCode,
               ) || "-";
-            const input = Object.entries(CONTROLLER_INPUTS).find(
+            let type: BindType = "controller";
+            let input: [string, any] | undefined = Object.entries(
+              CONTROLLER_INPUTS,
+            ).find(
               ([_, value]) =>
                 value.result_type === configBind.result_type &&
                 value.result_value === configBind.result_value,
             );
-            const name = input ? input[0] : "Unknown";
+            if (!input) {
+              type = "keyboard";
+              input = Object.entries(WINDOWS_ECMA_KEYMAP).find(
+                ([_, value]) => value === configBind.result_value,
+              );
+            }
+            const name = input ? input[0] : "";
             return {
               id: i,
+              type,
               name,
               keyName,
               keyCode,
@@ -168,22 +204,75 @@ function KeybindSettings({
               key={bind.id}
               className="border-b border-indigo-950 bg-indigo-800 bg-opacity-60"
             >
-              <td className="px-4 py-2">
+              <td className="justify-left flex gap-2.5 px-4 py-2">
                 <Dropdown
-                  options={Object.keys(CONTROLLER_INPUTS)}
-                  selected={bind.name}
+                  options={["controller", "keyboard"]}
                   onChange={(option) => {
                     const newKeybinds = binds.map((b) =>
                       b.id === bind.id
                         ? {
                             ...b,
-                            name: option,
+                            type: option as BindType,
+                            name: "",
                           }
                         : b,
                     );
                     setBinds(newKeybinds);
                   }}
-                />
+                >
+                  {bind.type === "controller" ? (
+                    <img
+                      src="/gamepad-icon.svg"
+                      alt="Controller Icon"
+                      width={37}
+                    />
+                  ) : bind.type === "keyboard" ? (
+                    <img
+                      src="/computer-keyboard-wireless-icon.svg"
+                      alt="Keyboard Icon"
+                      width={49}
+                    />
+                  ) : (
+                    ""
+                  )}
+                </Dropdown>
+                {bind.type === "controller" ? (
+                  <Dropdown
+                    options={Object.keys(CONTROLLER_INPUTS)}
+                    onChange={(option) => {
+                      const newKeybinds = binds.map((b) =>
+                        b.id === bind.id
+                          ? {
+                              ...b,
+                              name: option,
+                              type: "controller" as BindType,
+                            }
+                          : b,
+                      );
+                      setBinds(newKeybinds);
+                    }}
+                  >
+                    {bind.name}
+                  </Dropdown>
+                ) : (
+                  <Dropdown
+                    options={Object.keys(WINDOWS_ECMA_KEYMAP)}
+                    onChange={(option) => {
+                      const newKeybinds = binds.map((b) =>
+                        b.id === bind.id
+                          ? {
+                              ...b,
+                              name: option,
+                              type: "keyboard" as BindType,
+                            }
+                          : b,
+                      );
+                      setBinds(newKeybinds);
+                    }}
+                  >
+                    {bind.name}
+                  </Dropdown>
+                )}
               </td>
               <td className="px-4 py-2">
                 {bind.id === activeKeybindId ? "..." : bind.keyName}
@@ -252,7 +341,8 @@ function KeybindSettings({
                   ...binds,
                   {
                     id: binds.length,
-                    name: "Unknown",
+                    name: "",
+                    type: undefined,
                     keyName: "-",
                     keyCode: 0,
                   },

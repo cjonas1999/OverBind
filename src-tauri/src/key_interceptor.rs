@@ -7,6 +7,11 @@ use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use vigem_client::Client;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+    VIRTUAL_KEY,
+};
+use windows::Win32::UI::WindowsAndMessaging::{KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED};
 
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
@@ -180,26 +185,66 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
-    if n_code != HC_ACTION as i32 {
+    let kbd_struct = l_param.0 as *const KBDLLHOOKSTRUCT;
+    if n_code != HC_ACTION as i32
+        || (*kbd_struct).flags & LLKHF_INJECTED != KBDLLHOOKSTRUCT_FLAGS(0)
+    {
         return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
     }
 
-    let kbd_struct = l_param.0 as *const KBDLLHOOKSTRUCT;
-    // println!("Key {:?} {:?}", w_param, (*kbd_struct).vkCode);
+    let key = (*kbd_struct).vkCode;
+    // println!("Key {:?} {:?}", w_param, key);
+    let mut key_event_flag = None;
     {
         let mut key_states = KEY_STATES.write().unwrap();
         match w_param.0 as u32 {
-            WM_KEYUP | WM_SYSKEYUP => match key_states.get_mut(&(*kbd_struct).vkCode) {
-                Some(state) => state.is_pressed = false,
-                _ => (),
-            },
-
-            WM_KEYDOWN | WM_SYSKEYDOWN => match key_states.get_mut(&(*kbd_struct).vkCode) {
-                Some(state) => state.is_pressed = true,
-                _ => (),
-            },
-
+            WM_KEYUP | WM_SYSKEYUP => {
+                match key_states.get_mut(&key) {
+                    Some(state) => state.is_pressed = false,
+                    _ => (),
+                }
+                key_event_flag = Some(KEYEVENTF_KEYUP);
+            }
+            WM_KEYDOWN | WM_SYSKEYDOWN => {
+                match key_states.get_mut(&key) {
+                    Some(state) => state.is_pressed = true,
+                    _ => (),
+                }
+                key_event_flag = Some(KEYBD_EVENT_FLAGS(0));
+            }
             _ => return CallNextHookEx(None, n_code, w_param, l_param),
+        }
+    }
+
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        if let Some(flag) = key_event_flag {
+            if let Some(key_state) = key_states.get(&key) {
+                for result in key_state.results.iter() {
+                    if result.result_type == "keyboard" {
+                        let vk_code = result.result_value as u16;
+
+                        let ki = KEYBDINPUT {
+                            wVk: VIRTUAL_KEY(vk_code),
+                            wScan: 0,
+                            dwFlags: flag,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        };
+
+                        let input = INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 { ki },
+                        };
+
+                        unsafe {
+                            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                        }
+
+                        return LRESULT(1);
+                    }
+                }
+            }
         }
     }
 
