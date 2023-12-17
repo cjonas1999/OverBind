@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use vigem_client::Client;
 
 use windows::Win32::{
@@ -35,16 +35,16 @@ struct KeyResult {
     result_value: i32,
 }
 
-static KEY_STATES: Lazy<Arc<Mutex<HashMap<u32, KeyState>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+static KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 struct SharedState {
     target: Option<vigem_client::Xbox360Wired<Client>>,
     hook_handle: Option<HHOOK>,
 }
 
-static SHARED_STATE: Lazy<Arc<Mutex<SharedState>>> = Lazy::new(|| {
-    Arc::new(Mutex::new(SharedState {
+static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
+    Arc::new(RwLock::new(SharedState {
         target: None,
         hook_handle: None,
     }))
@@ -73,7 +73,7 @@ impl KeyInterceptor {
         // Wait for the virtual controller to be ready to accept updates
         target.wait_ready().map_err(|e| e.to_string())?;
 
-        let mut shared_state = SHARED_STATE.lock().unwrap();
+        let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.target = Some(target);
 
         Ok(())
@@ -112,7 +112,7 @@ impl KeyInterceptor {
             key_state.results.push(key_result);
         }
 
-        *KEY_STATES.lock().unwrap() = key_states;
+        *KEY_STATES.write().unwrap() = key_states;
 
         self.should_run.store(true, Ordering::SeqCst);
 
@@ -126,14 +126,14 @@ impl KeyInterceptor {
             )
         }
         .map_err(|e| e.to_string())?;
-        let mut shared_state = SHARED_STATE.lock().unwrap();
+        let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.hook_handle = Some(hook);
 
         Ok(())
     }
 
     pub fn stop(&self) {
-        let mut shared_state = SHARED_STATE.lock().unwrap();
+        let mut shared_state = SHARED_STATE.write().unwrap();
         if let Some(hook_handle) = shared_state.hook_handle.take() {
             unsafe {
                 let _ = UnhookWindowsHookEx(hook_handle);
@@ -142,7 +142,7 @@ impl KeyInterceptor {
     }
 
     pub fn is_running(&self) -> bool {
-        let shared_state = SHARED_STATE.lock().unwrap();
+        let shared_state = SHARED_STATE.read().unwrap();
         shared_state.hook_handle.is_some()
     }
 }
@@ -180,30 +180,27 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
-    let mut key_states = KEY_STATES.lock().unwrap();
-    let mut shared_state = SHARED_STATE.lock().unwrap();
-    let mut temp_target = shared_state.target.take();
-    let hook_handle = shared_state.hook_handle.unwrap();
-
     if n_code != HC_ACTION as i32 {
         return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
     }
 
     let kbd_struct = l_param.0 as *const KBDLLHOOKSTRUCT;
-    println!("Key {:?} {:?}", w_param, (*kbd_struct).vkCode);
+    // println!("Key {:?} {:?}", w_param, (*kbd_struct).vkCode);
+    {
+        let mut key_states = KEY_STATES.write().unwrap();
+        match w_param.0 as u32 {
+            WM_KEYUP | WM_SYSKEYUP => match key_states.get_mut(&(*kbd_struct).vkCode) {
+                Some(state) => state.is_pressed = false,
+                _ => (),
+            },
 
-    match w_param.0 as u32 {
-        WM_KEYUP | WM_SYSKEYUP => match key_states.get_mut(&(*kbd_struct).vkCode) {
-            Some(state) => state.is_pressed = false,
-            _ => (),
-        },
+            WM_KEYDOWN | WM_SYSKEYDOWN => match key_states.get_mut(&(*kbd_struct).vkCode) {
+                Some(state) => state.is_pressed = true,
+                _ => (),
+            },
 
-        WM_KEYDOWN | WM_SYSKEYDOWN => match key_states.get_mut(&(*kbd_struct).vkCode) {
-            Some(state) => state.is_pressed = true,
-            _ => (),
-        },
-
-        _ => return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param),
+            _ => return CallNextHookEx(None, n_code, w_param, l_param),
+        }
     }
 
     let mut face_buttons: u16 = 0;
@@ -214,23 +211,35 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     let mut thumb_rx: i16 = 0;
     let mut thumb_ry: i16 = 0;
 
-    for (_, key_state) in key_states.iter().filter(|&(_, ks)| ks.is_pressed) {
-        for result in key_state.results.iter() {
-            match result.result_type.as_str() {
-                "face_button" => face_buttons = face_buttons | result.result_value as u16,
-                "left_trigger" => left_trigger = cmp::max(left_trigger, result.result_value as u8),
-                "right_trigger" => {
-                    right_trigger = cmp::max(right_trigger, result.result_value as u8)
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        for (_, key_state) in key_states.iter().filter(|&(_, ks)| ks.is_pressed) {
+            for result in key_state.results.iter() {
+                match result.result_type.as_str() {
+                    "face_button" => face_buttons = face_buttons | result.result_value as u16,
+                    "left_trigger" => {
+                        left_trigger = cmp::max(left_trigger, result.result_value as u8)
+                    }
+                    "right_trigger" => {
+                        right_trigger = cmp::max(right_trigger, result.result_value as u8)
+                    }
+                    "thumb_lx" => {
+                        thumb_lx = find_higher_priority(thumb_lx, result.result_value as i16)
+                    }
+                    "thumb_ly" => {
+                        thumb_ly = find_higher_priority(thumb_ly, result.result_value as i16)
+                    }
+                    "thumb_rx" => {
+                        thumb_rx = find_higher_priority(thumb_rx, result.result_value as i16)
+                    }
+                    "thumb_ry" => {
+                        thumb_ry = find_higher_priority(thumb_ry, result.result_value as i16)
+                    }
+                    _ => (),
                 }
-                "thumb_lx" => thumb_lx = find_higher_priority(thumb_lx, result.result_value as i16),
-                "thumb_ly" => thumb_ly = find_higher_priority(thumb_ly, result.result_value as i16),
-                "thumb_rx" => thumb_rx = find_higher_priority(thumb_rx, result.result_value as i16),
-                "thumb_ry" => thumb_ry = find_higher_priority(thumb_ry, result.result_value as i16),
-                _ => (),
             }
         }
     }
-
     let gamepad = vigem_client::XGamepad {
         buttons: vigem_client::XButtons(face_buttons),
         left_trigger: left_trigger,
@@ -241,11 +250,14 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         thumb_ry: thumb_ry,
     };
 
-    if let Some(ref mut target) = &mut temp_target {
-        let _ = target.update(&gamepad);
+    {
+        let mut shared_state = SHARED_STATE.write().unwrap();
+        let mut temp_target = shared_state.target.take();
+        if let Some(ref mut target) = &mut temp_target {
+            let _ = target.update(&gamepad);
 
-        shared_state.target = temp_target;
+            shared_state.target = temp_target;
+        }
     }
-
-    return CallNextHookEx(hook_handle, n_code, w_param, l_param);
+    return CallNextHookEx(None, n_code, w_param, l_param);
 }
