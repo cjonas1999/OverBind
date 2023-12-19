@@ -13,5 +13,30 @@
         "keycode": "58",
         "result_type": "thumb_ry",
         "result_value": 29000
+    },
+    {
+        "keycode": "27",
+        "result_type": "socd",
+        "result_value": 37
+    },
+    {
+        "keycode": "25",
+        "result_type": "socd",
+        "result_value": 39
+    },
+    {
+        "keycode": "28",
+        "result_type": "socd",
+        "result_value": 38
+    },
+    {
+        "keycode": "26",
+        "result_type": "socd",
+        "result_value": 40
+    },
+    {
+        "keycode": "46",
+        "result_type": "keyboard",
+        "result_value": 27
     }
 ]

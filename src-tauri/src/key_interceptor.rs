@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use vigem_client::Client;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED};
 
@@ -32,15 +32,20 @@ struct ConfigJsonData {
 
 struct KeyState {
     is_pressed: bool,
-    results: Vec<KeyResult>,
-}
-
-struct KeyResult {
     result_type: String,
     result_value: i32,
 }
 
+struct OppositeKey {
+    is_pressed: bool,
+    is_virtual_pressed: bool,
+    opposite_key: Option<u32>, // Store the keycode of the opposite key
+}
+
 static KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+static OPPOSITE_KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, OppositeKey>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 struct SharedState {
@@ -95,29 +100,43 @@ impl KeyInterceptor {
         let data: Vec<ConfigJsonData> =
             serde_json::from_str(&contents).map_err(|e| e.to_string())?;
         let mut key_states = HashMap::new();
+        let mut opposite_key_states = HashMap::new();
 
         for item in data {
             let keycode =
                 u32::from_str_radix(&item.keycode, 16).expect("Invalid hexadecimal string");
-            let key_result = KeyResult {
-                result_type: item.result_type,
-                result_value: item.result_value,
-            };
 
-            println!(
-                "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
-                keycode, key_result.result_type, key_result.result_value
-            );
+            if item.result_type == "socd" {
+                let opposite_keycode = item.result_value as u32;
 
-            let key_state = key_states.entry(keycode).or_insert_with(|| KeyState {
-                is_pressed: false,
-                results: Vec::new(),
-            });
+                let opposite_key_state =
+                    opposite_key_states
+                        .entry(keycode)
+                        .or_insert_with(|| OppositeKey {
+                            is_pressed: false,
+                            is_virtual_pressed: false,
+                            opposite_key: Some(opposite_keycode),
+                        });
 
-            key_state.results.push(key_result);
+                println!(
+                    "Keycode: {:?}, OppositeKeycode: {:?}",
+                    keycode, opposite_key_state.opposite_key
+                );
+            } else {
+                let key_state = key_states.entry(keycode).or_insert_with(|| KeyState {
+                    is_pressed: false,
+                    result_type: item.result_type,
+                    result_value: item.result_value,
+                });
+                println!(
+                    "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
+                    keycode, key_state.result_type, key_state.result_value
+                );
+            }
         }
 
         *KEY_STATES.write().unwrap() = key_states;
+        *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
 
         self.should_run.store(true, Ordering::SeqCst);
 
@@ -191,57 +210,110 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     {
         return CallNextHookEx(HHOOK::default(), n_code, w_param, l_param);
     }
-
     let key = (*kbd_struct).vkCode;
+    let key_is_down = match w_param.0 as u32 {
+        WM_KEYDOWN | WM_SYSKEYDOWN => true,
+        WM_KEYUP | WM_SYSKEYUP => false,
+        _ => return CallNextHookEx(None, n_code, w_param, l_param),
+    };
     // println!("Key {:?} {:?}", w_param, key);
     let mut key_event_flag = None;
     {
         let mut key_states = KEY_STATES.write().unwrap();
-        match w_param.0 as u32 {
-            WM_KEYUP | WM_SYSKEYUP => {
-                match key_states.get_mut(&key) {
-                    Some(state) => state.is_pressed = false,
-                    _ => (),
-                }
-                key_event_flag = Some(KEYEVENTF_KEYUP);
-            }
-            WM_KEYDOWN | WM_SYSKEYDOWN => {
-                match key_states.get_mut(&key) {
-                    Some(state) => state.is_pressed = true,
-                    _ => (),
-                }
-                key_event_flag = Some(KEYBD_EVENT_FLAGS(0));
-            }
-            _ => return CallNextHookEx(None, n_code, w_param, l_param),
+        match key_states.get_mut(&key) {
+            Some(state) => state.is_pressed = key_is_down,
+            _ => (),
         }
+        key_event_flag = Some(if key_is_down {
+            KEYBD_EVENT_FLAGS(0)
+        } else {
+            KEYEVENTF_KEYUP
+        });
     }
 
     {
         let key_states = KEY_STATES.read().unwrap();
         if let Some(flag) = key_event_flag {
             if let Some(key_state) = key_states.get(&key) {
-                for result in key_state.results.iter() {
-                    if result.result_type == "keyboard" {
-                        let vk_code = result.result_value as u16;
+                if key_state.result_type == "keyboard" {
+                    let vk_code = key_state.result_value as u16;
 
-                        let ki = KEYBDINPUT {
-                            wVk: VIRTUAL_KEY(vk_code),
-                            wScan: 0,
-                            dwFlags: flag,
-                            time: 0,
-                            dwExtraInfo: 0,
-                        };
+                    let ki = KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(vk_code),
+                        wScan: 0,
+                        dwFlags: flag,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
 
-                        let input = INPUT {
-                            r#type: INPUT_KEYBOARD,
-                            Anonymous: INPUT_0 { ki },
-                        };
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 { ki },
+                    };
 
-                        unsafe {
-                            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-                        }
+                    unsafe {
+                        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                    }
 
-                        return LRESULT(1);
+                    return LRESULT(1);
+                }
+            }
+        }
+    }
+
+    {
+        let mut opposite_key_states = OPPOSITE_KEY_STATES.write().unwrap();
+        let key_state = opposite_key_states.get_mut(&key);
+        if let Some(key_state) = key_state {
+            key_state.is_pressed = key_is_down;
+            key_state.is_virtual_pressed = key_is_down;
+            if let Some(opposite_key) = key_state.opposite_key {
+                let opposite_key_state = opposite_key_states.get_mut(&opposite_key).unwrap();
+                if key_is_down
+                    && opposite_key_state.is_pressed
+                    && opposite_key_state.is_virtual_pressed
+                {
+                    opposite_key_state.is_virtual_pressed = false;
+                    let scan_code = MapVirtualKeyW(opposite_key.into(), MAPVK_VK_TO_VSC_EX) as u16;
+                    let ki = KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: scan_code,
+                        dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
+
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 { ki },
+                    };
+
+                    unsafe {
+                        let inputs = &[input];
+                        let inputs_size = std::mem::size_of::<INPUT>() as i32;
+                        SendInput(inputs, inputs_size);
+                    }
+                } else if !key_is_down && opposite_key_state.is_pressed {
+                    opposite_key_state.is_virtual_pressed = true;
+                    let scan_code = MapVirtualKeyW(opposite_key.into(), MAPVK_VK_TO_VSC_EX) as u16;
+
+                    let ki = KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: scan_code,
+                        dwFlags: KEYEVENTF_SCANCODE,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
+
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 { ki },
+                    };
+
+                    unsafe {
+                        let inputs = &[input];
+                        let inputs_size = std::mem::size_of::<INPUT>() as i32;
+                        SendInput(inputs, inputs_size);
                     }
                 }
             }
@@ -259,29 +331,27 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     {
         let key_states = KEY_STATES.read().unwrap();
         for (_, key_state) in key_states.iter().filter(|&(_, ks)| ks.is_pressed) {
-            for result in key_state.results.iter() {
-                match result.result_type.as_str() {
-                    "face_button" => face_buttons = face_buttons | result.result_value as u16,
-                    "left_trigger" => {
-                        left_trigger = cmp::max(left_trigger, result.result_value as u8)
-                    }
-                    "right_trigger" => {
-                        right_trigger = cmp::max(right_trigger, result.result_value as u8)
-                    }
-                    "thumb_lx" => {
-                        thumb_lx = find_higher_priority(thumb_lx, result.result_value as i16)
-                    }
-                    "thumb_ly" => {
-                        thumb_ly = find_higher_priority(thumb_ly, result.result_value as i16)
-                    }
-                    "thumb_rx" => {
-                        thumb_rx = find_higher_priority(thumb_rx, result.result_value as i16)
-                    }
-                    "thumb_ry" => {
-                        thumb_ry = find_higher_priority(thumb_ry, result.result_value as i16)
-                    }
-                    _ => (),
+            match key_state.result_type.as_str() {
+                "face_button" => face_buttons = face_buttons | key_state.result_value as u16,
+                "left_trigger" => {
+                    left_trigger = cmp::max(left_trigger, key_state.result_value as u8)
                 }
+                "right_trigger" => {
+                    right_trigger = cmp::max(right_trigger, key_state.result_value as u8)
+                }
+                "thumb_lx" => {
+                    thumb_lx = find_higher_priority(thumb_lx, key_state.result_value as i16)
+                }
+                "thumb_ly" => {
+                    thumb_ly = find_higher_priority(thumb_ly, key_state.result_value as i16)
+                }
+                "thumb_rx" => {
+                    thumb_rx = find_higher_priority(thumb_rx, key_state.result_value as i16)
+                }
+                "thumb_ry" => {
+                    thumb_ry = find_higher_priority(thumb_ry, key_state.result_value as i16)
+                }
+                _ => (),
             }
         }
     }

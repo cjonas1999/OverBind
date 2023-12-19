@@ -185,7 +185,7 @@ function App() {
       )}
 
       {isLogVisible && (
-        <div className="scrollbar-hide scroll overflow mx-12 mt-10 h-80 overflow-scroll bg-zinc-900 p-5 text-left font-mono">
+        <div className="scrollbar-hide scroll overflow mx-12 my-10 h-80 overflow-scroll bg-zinc-900 p-5 text-left font-mono">
           {logs
             .slice()
             .reverse()
