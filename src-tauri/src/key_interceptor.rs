@@ -274,7 +274,10 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             if let Some(opposite_key) = key_state.opposite_key {
                 let opposite_key_state = opposite_key_states.get_mut(&opposite_key).unwrap();
 
-                if key_is_down && opposite_key_state.is_pressed && opposite_key_state.is_virtual_pressed {
+                if key_is_down
+                    && opposite_key_state.is_pressed
+                    && opposite_key_state.is_virtual_pressed
+                {
                     opposite_key_state.is_virtual_pressed = false;
 
                     let scan_code = MapVirtualKeyW(opposite_key.into(), MAPVK_VK_TO_VSC_EX) as u16;
@@ -378,7 +381,6 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             shared_state.target = temp_target;
         }
     }
-
 
     return CallNextHookEx(None, n_code, w_param, l_param);
 }

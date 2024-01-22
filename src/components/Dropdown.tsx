@@ -1,13 +1,27 @@
-import { ReactNode, useEffect, useRef, useState } from "react";
+import {
+  MouseEventHandler,
+  ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const Dropdown = ({
   options,
   children,
   onChange,
+  onOpen,
+  onBlur,
+  hidden,
+  openAt,
 }: {
   options: string[];
-  children: ReactNode;
+  children?: ReactNode;
   onChange: (option: string) => void;
+  onOpen?: () => void;
+  onBlur?: () => void;
+  hidden?: boolean;
+  openAt?: { open: boolean; x: number; y: number };
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownDirection, setDropdownDirection] = useState("down");
@@ -15,16 +29,36 @@ const Dropdown = ({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const optionsRefs = useRef<Record<string, HTMLAnchorElement>>({});
   const optionsListRef = useRef<HTMLDivElement>(null);
+  const [optionsListLocation, setOptionsListLocation] = useState({
+    x: 20,
+    y: 20,
+    width: 224,
+  });
 
   const toggleDropdown = () => {
     if (!isOpen && buttonRef.current && dropdownRef.current) {
       const dropdownRect = buttonRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - dropdownRect.bottom;
       const spaceNeeded = 240; // max-h-60
-
+      setOptionsListLocation((location) => ({
+        x:
+          (dropdownRect.left + dropdownRect.right - location.width) / 2 +
+          window.scrollX,
+        y: dropdownRect.bottom + window.scrollY,
+        width: location.width,
+      }));
       setDropdownDirection(spaceBelow >= spaceNeeded ? "down" : "up");
     }
 
+    if (isOpen && onBlur) {
+      onBlur();
+    }
+
+    if (!isOpen && onOpen) {
+      onOpen();
+    }
+
+    console.trace("toggleDropdown");
     setIsOpen(!isOpen);
   };
 
@@ -36,7 +70,8 @@ const Dropdown = ({
           maxWidth = Math.max(maxWidth, optionElement.offsetWidth);
         }
       });
-      optionsListRef.current.style.width = `${maxWidth}px`;
+      console.log("maxWidth", maxWidth);
+      setOptionsListLocation((location) => ({ ...location, width: maxWidth }));
     }
   };
 
@@ -47,6 +82,9 @@ const Dropdown = ({
         !dropdownRef.current.contains(event.target as HTMLElement)
       ) {
         setIsOpen(false);
+        if (onBlur) {
+          onBlur();
+        }
       }
     };
 
@@ -58,36 +96,53 @@ const Dropdown = ({
 
   useEffect(updateDropdownWidth, [options]);
 
+  useEffect(() => {
+    if (openAt !== undefined && openAt.open !== isOpen) {
+      toggleDropdown();
+    }
+  }, [openAt]);
+
+  useEffect(() => {
+    console.log("isOpen", isOpen);
+  }, [isOpen]);
+
   return (
     <div className="relative" ref={dropdownRef}>
-      <button
-        ref={buttonRef}
-        className={`inline-flex justify-center gap-x-1.5 rounded-md bg-blue-900 px-4 py-2 shadow-sm hover:bg-blue-700 ${
-          typeof children === "string" ? "bg-blue-900" : "bg-gray-500"
-        }`}
-        onClick={toggleDropdown}
-      >
-        {children}
-        <svg
-          className="-mr-1 h-5 w-5 text-white"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
+      {hidden ? null : (
+        <button
+          ref={buttonRef}
+          className={`inline-flex justify-center gap-x-1.5 rounded-md bg-blue-900 px-4 py-2 shadow-sm hover:bg-blue-700 ${
+            typeof children === "string" ? "bg-blue-900" : "bg-gray-500"
+          }`}
+          onClick={toggleDropdown}
         >
-          <path
-            fillRule="evenodd"
-            d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-            clipRule="evenodd"
-          />
-        </svg>
-      </button>
+          {children}
+          <svg
+            className="-mr-1 h-5 w-5 text-white"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+      )}
 
       {isOpen && (
         <div
           ref={optionsListRef}
-          className={`absolute z-10 w-56 rounded-md bg-blue-900 shadow-lg ${
+          className={`${"fixed"} z-10 rounded-md bg-blue-900 shadow-lg ${
             dropdownDirection === "up" ? "bottom-full mb-1" : "mt-1"
           }`}
+          style={{
+            left: openAt?.x ?? optionsListLocation.x,
+            top: openAt?.y ?? optionsListLocation.y,
+            width: optionsListLocation.width,
+          }}
         >
           <div className="scrollbar-hide scroll overflow max-h-60 overflow-scroll rounded-md py-1 text-base">
             {options.map((option) => (
@@ -102,6 +157,7 @@ const Dropdown = ({
                 className="block px-4 py-2 text-sm text-white hover:bg-blue-800"
                 onClick={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   onChange(option);
                   setIsOpen(false);
                 }}
