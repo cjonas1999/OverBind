@@ -40,14 +40,17 @@ const Dropdown = ({
       const dropdownRect = buttonRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - dropdownRect.bottom;
       const spaceNeeded = 240; // max-h-60
+      const flipped = spaceBelow < spaceNeeded;
+      setDropdownDirection(flipped ? "up" : "down");
       setOptionsListLocation((location) => ({
         x:
           (dropdownRect.left + dropdownRect.right - location.width) / 2 +
           window.scrollX,
-        y: dropdownRect.bottom + window.scrollY,
+        y: flipped
+          ? window.innerHeight - dropdownRect.top
+          : dropdownRect.bottom,
         width: location.width,
       }));
-      setDropdownDirection(spaceBelow >= spaceNeeded ? "down" : "up");
     }
 
     if (isOpen && onBlur) {
@@ -140,7 +143,14 @@ const Dropdown = ({
           }`}
           style={{
             left: openAt?.x ?? optionsListLocation.x,
-            top: openAt?.y ?? optionsListLocation.y,
+            top:
+              dropdownDirection === "up"
+                ? "auto"
+                : openAt?.y ?? optionsListLocation.y,
+            bottom:
+              dropdownDirection === "up"
+                ? openAt?.y ?? optionsListLocation.y
+                : "auto",
             width: optionsListLocation.width,
           }}
         >
