@@ -65,7 +65,7 @@ function KeybindSettings({
                   value.result_value === configBind.result_value,
               )?.[0] ?? "";
             if (!output) {
-              type = "keyboard";
+              type = configBind.result_type as BindType;
               output =
                 Object.entries(WINDOWS_ECMA_KEYMAP).find(
                   ([_, value]) => value === configBind.result_value,
@@ -130,6 +130,7 @@ function KeybindSettings({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      console.log("Keydown event", event);
       let name = event.code;
       console.log(`Detected key ${name}`);
       let winKeyCode = WINDOWS_ECMA_KEYMAP[name];
@@ -164,6 +165,7 @@ function KeybindSettings({
             );
           }
           setActiveKeybindId(undefined); // Reset active keybind ID
+          console.log("Removed keydown listener");
           window.removeEventListener("keydown", handleKeyDown);
           window.removeEventListener("keyup", handleKeyUp);
         }
@@ -178,12 +180,14 @@ function KeybindSettings({
     };
 
     if (activeKeybindId !== undefined) {
+      console.log("Adding keydown listener");
       window.addEventListener("keydown", handleKeyDown);
       window.addEventListener("keyup", handleKeyUp);
     }
 
     return () => {
       if (activeKeybindId !== undefined) {
+        console.log("Removed keydown listener");
         window.removeEventListener("keydown", handleKeyDown);
         window.removeEventListener("keyup", handleKeyUp);
       }
