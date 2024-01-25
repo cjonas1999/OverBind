@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api";
 import { useEffect, useState } from "react";
-import { MOD_KEYS, WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
+import { WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
 import Dropdown from "./Dropdown";
 import { InputTypeIcon } from "./InputTypeIcon";
 
@@ -50,35 +50,46 @@ function KeybindSettings({
         console.log(JSON.stringify(response));
         const configBinds = response as ConfigBind[];
         setBindsCount(configBinds.length);
-        setBinds(
-          configBinds.map((configBind, i) => {
-            const keyIn = parseInt(configBind.keycode, 16);
-            const input =
+        const newBinds = configBinds.map((configBind, i) => {
+          const keyIn = parseInt(configBind.keycode, 16);
+          const input =
+            Object.entries(WINDOWS_ECMA_KEYMAP).find(
+              ([_, value]) => value === keyIn,
+            )?.[0] ?? "";
+          let type: BindType = "controller";
+          let output: string =
+            Object.entries(CONTROLLER_INPUTS).find(
+              ([_, value]) =>
+                value.result_type === configBind.result_type &&
+                value.result_value === configBind.result_value,
+            )?.[0] ?? "";
+          if (!output) {
+            type = configBind.result_type as BindType;
+            output =
               Object.entries(WINDOWS_ECMA_KEYMAP).find(
-                ([_, value]) => value === keyIn,
+                ([_, value]) => value === configBind.result_value,
               )?.[0] ?? "";
-            let type: BindType = "controller";
-            let output: string =
-              Object.entries(CONTROLLER_INPUTS).find(
-                ([_, value]) =>
-                  value.result_type === configBind.result_type &&
-                  value.result_value === configBind.result_value,
-              )?.[0] ?? "";
-            if (!output) {
-              type = configBind.result_type as BindType;
-              output =
-                Object.entries(WINDOWS_ECMA_KEYMAP).find(
-                  ([_, value]) => value === configBind.result_value,
-                )?.[0] ?? "";
+          }
+          return {
+            id: i,
+            type,
+            input,
+            output,
+          };
+        });
+        const linkedBinds: number[][] = [];
+        newBinds.forEach((bind) => {
+          if (bind.type === "socd") {
+            const otherBind = newBinds.find(
+              (b) => b.id !== bind.id && b.type === "socd",
+            );
+            if (otherBind && !linkedBinds.find((b) => b.includes(bind.id))) {
+              linkedBinds.push([bind.id, otherBind.id]);
             }
-            return {
-              id: i,
-              type,
-              input,
-              output,
-            };
-          }),
-        );
+          }
+        });
+        setBinds(newBinds);
+        setLinkedBinds(linkedBinds);
       })
       .catch((err) => onErr(err));
   };
@@ -226,7 +237,22 @@ function KeybindSettings({
             >
               <td className="object-center">
                 <div className="flex justify-center">
-                  {bind.type ? <InputTypeIcon type={bind.type} /> : ""}
+                  {bind.type ? (
+                    <InputTypeIcon
+                      type={bind.type}
+                      badge={
+                        bind.type === "socd"
+                          ? (
+                              linkedBinds.findIndex(
+                                (b) => b[0] === bind.id || b[1] === bind.id,
+                              ) + 1
+                            ).toString()
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    ""
+                  )}
                 </div>
               </td>
               <td className="px-4 py-2">

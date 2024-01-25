@@ -36,10 +36,13 @@ const Dropdown = ({
   });
 
   const toggleDropdown = () => {
-    if (!isOpen && buttonRef.current && dropdownRef.current) {
-      const dropdownRect = buttonRef.current.getBoundingClientRect();
+    if (!isOpen && dropdownRef.current) {
+      const dropdownRect = dropdownRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - dropdownRect.bottom;
-      const spaceNeeded = 240; // max-h-60
+      let spaceNeeded = 240; // max-h-60
+      if (openAt?.y) {
+        spaceNeeded = 108;
+      }
       const flipped = spaceBelow < spaceNeeded;
       setDropdownDirection(flipped ? "up" : "down");
       setOptionsListLocation((location) => ({
@@ -61,7 +64,6 @@ const Dropdown = ({
       onOpen();
     }
 
-    console.trace("toggleDropdown");
     setIsOpen(!isOpen);
   };
 
@@ -73,7 +75,6 @@ const Dropdown = ({
           maxWidth = Math.max(maxWidth, optionElement.offsetWidth);
         }
       });
-      console.log("maxWidth", maxWidth);
       setOptionsListLocation((location) => ({ ...location, width: maxWidth }));
     }
   };
@@ -104,10 +105,6 @@ const Dropdown = ({
       toggleDropdown();
     }
   }, [openAt]);
-
-  useEffect(() => {
-    console.log("isOpen", isOpen);
-  }, [isOpen]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -149,7 +146,9 @@ const Dropdown = ({
                 : openAt?.y ?? optionsListLocation.y,
             bottom:
               dropdownDirection === "up"
-                ? openAt?.y ?? optionsListLocation.y
+                ? openAt?.y
+                  ? window.innerHeight - openAt?.y
+                  : optionsListLocation.y
                 : "auto",
             width: optionsListLocation.width,
           }}

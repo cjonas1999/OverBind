@@ -1,7 +1,9 @@
 export function InputTypeIcon({
   type,
+  badge,
 }: {
   type: "controller" | "keyboard" | "socd";
+  badge?: string;
 }) {
   const getIcon = () => {
     switch (type) {
@@ -57,8 +59,17 @@ export function InputTypeIcon({
   };
 
   return (
-    <div className="flex h-8 w-8 items-center justify-center rounded-full border-gray-600 bg-none">
+    <div className="relative flex h-8 w-8 items-center justify-center rounded-full border-gray-600 bg-none">
       {getIcon()}
+      {badge && (
+        <div className="absolute right-0 top-0 -translate-y-1/2 translate-x-1/2 transform">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white">
+            <span className="text text-xs font-bold text-indigo-900">
+              {badge}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
