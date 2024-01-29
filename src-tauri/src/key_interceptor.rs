@@ -310,14 +310,20 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             {
                 opposite_key_state.is_virtual_pressed = false;
 
-                if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
-                    let scan_code = MapVirtualKeyW(
-                        cloned_key_state
-                            .opposite_key_mapping
-                            .unwrap_or(cloned_key_state.opposite_key_value as u16)
-                            as u32,
-                        MAPVK_VK_TO_VSC_EX,
-                    ) as u16;
+                // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
+                {
+                    let scan_code = {
+                        let key_value = if cloned_key_state.opposite_key_type.clone()
+                            == String::from("face_button")
+                            || cloned_key_state.opposite_key_mapping.is_none()
+                        {
+                            cloned_key_state.opposite_key_value as u32
+                        } else {
+                            cloned_key_state.opposite_key_mapping.unwrap() as u32
+                        };
+
+                        MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX) as u16
+                    };
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
                         wScan: scan_code,
@@ -340,14 +346,21 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             } else if !key_is_down && opposite_key_state.is_pressed {
                 opposite_key_state.is_virtual_pressed = true;
 
-                if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
-                    let scan_code = MapVirtualKeyW(
-                        cloned_key_state
-                            .opposite_key_mapping
-                            .unwrap_or(cloned_key_state.opposite_key_value as u16)
-                            as u32,
-                        MAPVK_VK_TO_VSC_EX,
-                    ) as u16;
+                // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
+                {
+                    let scan_code = {
+                        let key_value = if cloned_key_state.opposite_key_type.clone()
+                            == String::from("face_button")
+                            || cloned_key_state.opposite_key_mapping.is_none()
+                        {
+                            cloned_key_state.opposite_key_value as u32
+                        } else {
+                            cloned_key_state.opposite_key_mapping.unwrap() as u32
+                        };
+
+                        MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX) as u16
+                    };
+
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
                         wScan: scan_code,
