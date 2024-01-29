@@ -289,7 +289,6 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     }
 
     // SOCD
-    let mut opposite_face_button_state = None;
     {
         let mut opposite_key_states = OPPOSITE_KEY_STATES.write().unwrap();
 
@@ -311,9 +310,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             {
                 opposite_key_state.is_virtual_pressed = false;
 
-                if opposite_key_state.opposite_key_type.clone() == String::from("face_button") {
-                    opposite_face_button_state = Some(opposite_key_state.clone());
-                } else {
+                if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                     let scan_code = MapVirtualKeyW(
                         cloned_key_state
                             .opposite_key_mapping
@@ -343,9 +340,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             } else if !key_is_down && opposite_key_state.is_pressed {
                 opposite_key_state.is_virtual_pressed = true;
 
-                if opposite_key_state.opposite_key_type.clone() == String::from("face_button") {
-                    opposite_face_button_state = Some(opposite_key_state.clone());
-                } else {
+                if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                     let scan_code = MapVirtualKeyW(
                         cloned_key_state
                             .opposite_key_mapping
@@ -412,12 +407,17 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             }
         }
     }
-    {
-        if let Some(opposite_face_button_state) = opposite_face_button_state {
-            if let Some(opposite_key_value) = opposite_face_button_state.opposite_key_mapping {
-                let mask = opposite_key_value as u16;
 
-                if opposite_face_button_state.is_virtual_pressed {
+    {
+        let opposite_key_states = OPPOSITE_KEY_STATES.read().unwrap();
+        for (_, opposite_key_state) in opposite_key_states
+            .iter()
+            .filter(|&(_, ks)| ks.opposite_key_type == String::from("face_button"))
+        {
+            if let Some(opposite_key_mapping) = opposite_key_state.opposite_key_mapping {
+                let mask = opposite_key_mapping as u16;
+
+                if opposite_key_state.is_virtual_pressed {
                     // If it's virtually pressed, set the specific bit
                     face_buttons |= mask;
                 } else {
