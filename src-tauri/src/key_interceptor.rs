@@ -8,8 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use vigem_client::Client;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-    KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY
 };
 use windows::Win32::UI::WindowsAndMessaging::{KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED};
 
@@ -196,6 +195,26 @@ impl KeyInterceptor {
     }
 }
 
+fn is_extended_key(virtual_keycode: u32) -> bool {
+    let extended_keys: [u32; 14] = [
+        0x21, //page up
+        0x22, //page down
+        0x23, //end
+        0x24, //home
+        0x25, //left arrow
+        0x26, //up arrow
+        0x27, //right arrow
+        0x28, //down arrow
+        0x2C, //print screen
+        0x2D, //insert
+        0x2E, //delete
+        0x90, //numlock
+        0xA3, //right CTRL
+        0xA5, //right ALT
+    ];
+    extended_keys.contains(&virtual_keycode)
+}
+
 // Used for when multiple stick rebinds are set, first prioritizes right/up(positive) over left/down(negative), then larger values within those bands
 // neutral(zero) is the absolute lowest priority
 fn analog_priority_transform(n: i32) -> i32 {
@@ -312,6 +331,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
                 // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                 {
+                    let extended_flag;
                     let scan_code = {
                         let key_value = if cloned_key_state.opposite_key_type.clone()
                             == String::from("face_button")
@@ -322,12 +342,19 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                             cloned_key_state.opposite_key_mapping.unwrap() as u32
                         };
 
-                        MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX) as u16
+                        extended_flag = if is_extended_key(key_value) { KEYEVENTF_EXTENDEDKEY } else { KEYBD_EVENT_FLAGS(0) };
+
+                        let code = MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX);
+
+                        code as u16
                     };
+                    println!("Scan code up: {:?}", scan_code);
+
+
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
                         wScan: scan_code,
-                        dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE,
+                        dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE | extended_flag,
                         time: 0,
                         dwExtraInfo: 0,
                     };
@@ -348,6 +375,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
                 // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                 {
+                    let extended_flag;
                     let scan_code = {
                         let key_value = if cloned_key_state.opposite_key_type.clone()
                             == String::from("face_button")
@@ -358,13 +386,18 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                             cloned_key_state.opposite_key_mapping.unwrap() as u32
                         };
 
-                        MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX) as u16
+                        extended_flag = if is_extended_key(key_value) { KEYEVENTF_EXTENDEDKEY } else { KEYBD_EVENT_FLAGS(0) };
+
+                        let code = MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX);
+
+                        code as u16
                     };
+                    println!("Scan code down: {:?}", scan_code);
 
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
                         wScan: scan_code,
-                        dwFlags: KEYEVENTF_SCANCODE,
+                        dwFlags: KEYEVENTF_SCANCODE | extended_flag,
                         time: 0,
                         dwExtraInfo: 0,
                     };
@@ -398,10 +431,10 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         for (_, key_state) in key_states.iter().filter(|&(_, ks)| ks.is_pressed) {
             match key_state.result_type.as_str() {
                 "face_button" => face_buttons = face_buttons | key_state.result_value as u16,
-                "left_trigger" => {
+                "trigger_l" => {
                     left_trigger = cmp::max(left_trigger, key_state.result_value as u8)
                 }
-                "right_trigger" => {
+                "trigger_r" => {
                     right_trigger = cmp::max(right_trigger, key_state.result_value as u8)
                 }
                 "thumb_lx" => {
