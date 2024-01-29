@@ -81,7 +81,10 @@ function KeybindSettings({
         newBinds.forEach((bind) => {
           if (bind.type === "socd") {
             const otherBind = newBinds.find(
-              (b) => b.id !== bind.id && b.type === "socd",
+              (b) =>
+                b.id !== bind.id &&
+                b.type === "socd" &&
+                b.input === bind.output,
             );
             if (otherBind && !linkedBinds.find((b) => b.includes(bind.id))) {
               linkedBinds.push([bind.id, otherBind.id]);
