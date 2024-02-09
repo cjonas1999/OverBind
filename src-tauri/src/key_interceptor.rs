@@ -348,7 +348,6 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
                         code as u16
                     };
-                    println!("Scan code up: {:?}", scan_code);
 
 
                     let ki = KEYBDINPUT {
@@ -392,7 +391,6 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
                         code as u16
                     };
-                    println!("Scan code down: {:?}", scan_code);
 
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
