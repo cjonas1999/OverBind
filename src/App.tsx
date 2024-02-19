@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState } from "react";
 import KeybindSettings from "./components/Edit";
+import SettingsModal from "./components/SettingsModal";
+import { listen } from "@tauri-apps/api/event";
 
 let init = false;
 
@@ -57,6 +59,7 @@ function App() {
 
   const [isOverbindRunning, setIsOverbindRunning] = useState(false);
   const [isEditingBinds, setIsEditingBinds] = useState(false);
+  const [isEditingSettings, setEditingSettings] = useState(false);
   const [err, setErr] = useState("");
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -101,6 +104,17 @@ function App() {
     };
   }, []);
 
+  // update ui when tray menu is used
+  useEffect(() => {
+    listen("tray_intercept_disable", (e) => {
+      setIsOverbindRunning(false);
+    });
+    listen("tray_intercept_enable", (e) => {
+      setIsOverbindRunning(true);
+    });
+  }, []);
+
+  
   useEffect(() => {
     if (!init) {
       init = true;
@@ -162,6 +176,14 @@ function App() {
         >
           Logs
         </button>
+        <button
+          className="rounded-md bg-stone-600 bg-opacity-90 px-5 py-2.5 text-base font-medium
+          text-white shadow outline-none transition-colors
+          hover:bg-stone-500 active:bg-stone-500"
+          onClick={() => setEditingSettings(!isEditingSettings)}
+        >
+          Settings
+        </button>
       </div>
 
       {err && (
@@ -178,6 +200,7 @@ function App() {
             setIsEditingBinds(false);
             if (isOverbindRunning) {
               await stopOverbind();
+              await runOverbind();
             }
           }}
           onErr={setErr}
@@ -206,6 +229,19 @@ function App() {
               </div>
             ))}
         </div>
+      )}
+
+      {isEditingSettings && (
+        <SettingsModal
+        onCancel={() => setEditingSettings(false)}
+          onSave={async () => {
+            setEditingSettings(false);
+            if (isOverbindRunning) {
+              await stopOverbind();
+              await runOverbind();
+            }
+          }}
+          onErr={setErr}/>
       )}
     </div>
   );
