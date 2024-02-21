@@ -106,10 +106,10 @@ function App() {
 
   // update ui when tray menu is used
   useEffect(() => {
-    listen("tray_intercept_disable", (e) => {
+    listen("tray_intercept_disable", () => {
       setIsOverbindRunning(false);
     });
-    listen("tray_intercept_enable", (e) => {
+    listen("tray_intercept_enable", () => {
       setIsOverbindRunning(true);
     });
   }, []);
