@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/tauri";
 import { useEffect, useState } from "react";
 import KeybindSettings from "./components/Edit";
+import SettingsModal from "./components/SettingsModal";
+import { listen } from "@tauri-apps/api/event";
 
 let init = false;
 
@@ -57,6 +59,7 @@ function App() {
 
   const [isOverbindRunning, setIsOverbindRunning] = useState(false);
   const [isEditingBinds, setIsEditingBinds] = useState(false);
+  const [isEditingSettings, setEditingSettings] = useState(false);
   const [err, setErr] = useState("");
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -99,6 +102,16 @@ function App() {
       console.log = originalConsoleLog;
       // Reset other console methods if overridden
     };
+  }, []);
+
+  // update ui when tray menu is used
+  useEffect(() => {
+    listen("tray_intercept_disable", () => {
+      setIsOverbindRunning(false);
+    });
+    listen("tray_intercept_enable", () => {
+      setIsOverbindRunning(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -150,7 +163,12 @@ function App() {
           className="rounded-md bg-yellow-500 bg-opacity-60 px-5 py-2.5 text-base font-medium
           text-white shadow outline-none transition-colors
           hover:bg-yellow-600 active:bg-yellow-800"
-          onClick={() => setIsEditingBinds(!isEditingBinds)}
+          onClick={() => {
+            setIsEditingBinds(!isEditingBinds);
+            if (isEditingSettings) {
+              setEditingSettings(false);
+            }
+          }}
         >
           Edit
         </button>
@@ -161,6 +179,19 @@ function App() {
           onClick={toggleLogs}
         >
           Logs
+        </button>
+        <button
+          className="rounded-md bg-stone-600 bg-opacity-90 px-5 py-2.5 text-base font-medium
+          text-white shadow outline-none transition-colors
+          hover:bg-stone-500 active:bg-stone-500"
+          onClick={() => {
+            setEditingSettings(!isEditingSettings);
+            if (isEditingBinds) {
+              setIsEditingBinds(false);
+            }
+          }}
+        >
+          Settings
         </button>
       </div>
 
@@ -178,6 +209,21 @@ function App() {
             setIsEditingBinds(false);
             if (isOverbindRunning) {
               await stopOverbind();
+              await runOverbind();
+            }
+          }}
+          onErr={setErr}
+        />
+      )}
+
+      {isEditingSettings && (
+        <SettingsModal
+          onCancel={() => setEditingSettings(false)}
+          onSave={async () => {
+            setEditingSettings(false);
+            if (isOverbindRunning) {
+              await stopOverbind();
+              await runOverbind();
             }
           }}
           onErr={setErr}
