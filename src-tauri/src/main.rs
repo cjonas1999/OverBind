@@ -1,18 +1,18 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+use serde_json::Value;
 use std::env;
 #[cfg(target_os = "windows")]
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use serde_json::Value;
 use tauri::api::path::data_dir;
 mod key_interceptor;
 
 use crate::key_interceptor::KeyInterceptor;
 use serde::{Deserialize, Serialize};
-use tauri::{State, Manager};
+use tauri::{Manager, State};
 
 #[derive(Serialize, Deserialize)]
 struct KeyConfig {
@@ -33,11 +33,12 @@ struct Settings {
 struct AppSettingsState(Arc<Mutex<Settings>>);
 
 fn start_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
-    app.tray_handle().set_menu(make_disable_tray_menu()).unwrap();
+    app.tray_handle()
+        .set_menu(make_disable_tray_menu())
+        .unwrap();
 
     let mut interceptor = state.0.lock().unwrap();
     interceptor.start().map_err(|e| e.to_string());
-
 }
 
 fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
@@ -52,26 +53,37 @@ fn is_key_interception_running(state: &State<KeyInterceptorState>) -> bool {
     interceptor.is_running()
 }
 
-
 fn make_disable_tray_menu() -> tauri::SystemTrayMenu {
     let disble_interception = tauri::CustomMenuItem::new("disable".to_string(), "Disable OverBind");
+    let open_overbind_settings =
+        tauri::CustomMenuItem::new("settings".to_string(), "Open OverBind Settings");
     let exit = tauri::CustomMenuItem::new("exit".to_string(), "Exit");
 
-    tauri::SystemTrayMenu::new().add_item(disble_interception).add_item(exit)
+    tauri::SystemTrayMenu::new()
+        .add_item(disble_interception)
+        .add_item(open_overbind_settings)
+        .add_item(exit)
 }
 
 fn make_enable_tray_menu() -> tauri::SystemTrayMenu {
     let enable_interception = tauri::CustomMenuItem::new("enable".to_string(), "Enable OverBind");
+    let open_overbind_settings =
+        tauri::CustomMenuItem::new("settings".to_string(), "Open OverBind Settings");
     let exit = tauri::CustomMenuItem::new("exit".to_string(), "Exit");
 
-    tauri::SystemTrayMenu::new().add_item(enable_interception).add_item(exit)
+    tauri::SystemTrayMenu::new()
+        .add_item(enable_interception)
+        .add_item(open_overbind_settings)
+        .add_item(exit)
 }
 
-
 #[tauri::command]
-fn start_interception(app: tauri::AppHandle, state: State<KeyInterceptorState>) -> Result<(), String> {
+fn start_interception(
+    app: tauri::AppHandle,
+    state: State<KeyInterceptorState>,
+) -> Result<(), String> {
     start_key_interception(&app, &state);
-    
+
     Ok(())
 }
 
@@ -130,7 +142,6 @@ fn ensure_config_file_exists() -> Result<(), String> {
     }
     Ok(())
 }
-
 
 fn ensure_settings_file_exists() -> Result<(), String> {
     let config_path = get_app_settings_path()?;
@@ -236,39 +247,46 @@ fn main() {
             _ => {}
         })
         .on_system_tray_event(|app, event| match event {
-			tauri::SystemTrayEvent::DoubleClick { position: _, size: _, .. } => {
-				let window = app.get_window("main").unwrap();
-				if window.is_visible().unwrap() {
-					window.hide().unwrap();
-				} else {
-					window.show().unwrap();
-					window.set_focus().unwrap();
-				}
-			}
-            tauri::SystemTrayEvent::MenuItemClick { id, .. } => {
-                match id.as_str() {
-                    "disable" => {
-                        let state = app.state::<KeyInterceptorState>();
-                        stop_key_interception(app, &state);
-
-                        let window = app.get_window("main").unwrap();
-                        window.emit("tray_intercept_disable", "").unwrap();
-                    }
-                    "enable" => {
-                        let state = app.state::<KeyInterceptorState>();
-                        start_key_interception(app, &state);
-
-                        let window = app.get_window("main").unwrap();
-                        window.emit("tray_intercept_enable", "").unwrap();
-                    }
-                    "exit" => {
-                        std::process::exit(0);
-                    }
-                    _ => {}
+            tauri::SystemTrayEvent::DoubleClick {
+                position: _,
+                size: _,
+                ..
+            } => {
+                let window = app.get_window("main").unwrap();
+                if window.is_visible().unwrap() {
+                    window.hide().unwrap();
+                } else {
+                    window.show().unwrap();
+                    window.set_focus().unwrap();
                 }
-              }
+            }
+            tauri::SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
+                "disable" => {
+                    let state = app.state::<KeyInterceptorState>();
+                    stop_key_interception(app, &state);
+
+                    let window = app.get_window("main").unwrap();
+                    window.emit("tray_intercept_disable", "").unwrap();
+                }
+                "enable" => {
+                    let state = app.state::<KeyInterceptorState>();
+                    start_key_interception(app, &state);
+
+                    let window = app.get_window("main").unwrap();
+                    window.emit("tray_intercept_enable", "").unwrap();
+                }
+                "settings" => {
+                    let window = app.get_window("main").unwrap();
+                    window.show().unwrap();
+                    window.set_focus().unwrap();
+                }
+                "exit" => {
+                    std::process::exit(0);
+                }
+                _ => {}
+            },
             _ => {}
-		})
+        })
         .build(tauri::generate_context!())
         .unwrap() // Handle the error using unwrap
         .run(|_app_handle, _event| {

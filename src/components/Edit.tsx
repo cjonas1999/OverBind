@@ -221,7 +221,7 @@ function KeybindSettings({
 
   return (
     <div className="p-4 text-white">
-      <h1 className="mb-4 text-lg font-bold">Keybind Settings</h1>
+      <h1 className="mb-4 text-lg font-bold">Edit Keybinds</h1>
       <table className="mb-4 w-full table-auto">
         <thead>
           <tr className="bg-indigo-950 bg-opacity-60">
