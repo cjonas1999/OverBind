@@ -24,9 +24,10 @@ struct KeyConfig {
 #[derive(Clone)]
 struct KeyInterceptorState(Arc<Mutex<KeyInterceptor>>);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Settings {
     close_to_tray: bool,
+    allowed_programs: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -206,16 +207,17 @@ fn save_app_settings(settings: Value, state: State<AppSettingsState>) -> Result<
 fn main() {
     let _ = ensure_config_file_exists();
     let _ = ensure_settings_file_exists();
+
+    let settings_json = read_settings().unwrap();
+    let settings: Settings = serde_json::from_value(settings_json).unwrap();
+
     let interceptor = KeyInterceptor::new();
     let interceptor_arc = Arc::new(Mutex::new(interceptor));
     let interceptor_state = KeyInterceptorState(interceptor_arc.clone());
     {
         let mut interceptor = interceptor_arc.lock().unwrap();
-        interceptor.initialize().unwrap();
+        interceptor.initialize(&settings).unwrap();
     }
-
-    let settings_json = read_settings().unwrap();
-    let settings: Settings = serde_json::from_value(settings_json).unwrap();
     let settings_arc = Arc::new(Mutex::new(settings));
     let settings_state = AppSettingsState(settings_arc.clone());
 

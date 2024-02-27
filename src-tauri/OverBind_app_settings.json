@@ -1,3 +1,4 @@
 {
-    "close_to_tray": false
+    "close_to_tray": false,
+    "allowed_programs": []
 }

@@ -7,11 +7,20 @@ use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use vigem_client::Client;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY
+use windows::core::PWSTR;
+use windows::Win32::Foundation::{CloseHandle, HWND};
+use windows::Win32::System::Threading::{
+    OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION,
 };
-use windows::Win32::UI::WindowsAndMessaging::{KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED};
-
+use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
+};
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
     UI::WindowsAndMessaging::{
@@ -20,7 +29,7 @@ use windows::Win32::{
     },
 };
 
-use crate::get_config_path;
+use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
 struct ConfigJsonData {
@@ -53,12 +62,16 @@ static OPPOSITE_KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, OppositeKey>>>> =
 struct SharedState {
     target: Option<vigem_client::Xbox360Wired<Client>>,
     hook_handle: Option<HHOOK>,
+    window_hook_handle: Option<HWINEVENTHOOK>,
+    allowed_programs: Option<Vec<String>>,
 }
 
 static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
     Arc::new(RwLock::new(SharedState {
         target: None,
         hook_handle: None,
+        window_hook_handle: None,
+        allowed_programs: None,
     }))
 });
 
@@ -73,7 +86,7 @@ impl KeyInterceptor {
         }
     }
 
-    pub fn initialize(&mut self) -> Result<(), String> {
+    pub fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
         // Connect to the ViGEmBus driver
         let client = vigem_client::Client::connect().map_err(|e| e.to_string())?;
         // Create the virtual controller target
@@ -87,6 +100,10 @@ impl KeyInterceptor {
 
         let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.target = Some(target);
+        if !settings.allowed_programs.is_empty() {
+            println!("Allowed programs: {:?}", settings.allowed_programs);
+            shared_state.allowed_programs = Some(settings.allowed_programs.clone());
+        }
 
         Ok(())
     }
@@ -163,19 +180,100 @@ impl KeyInterceptor {
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
 
         self.should_run.store(true, Ordering::SeqCst);
+        unsafe extern "system" fn win_event_proc(
+            _hwineventhook: HWINEVENTHOOK,
+            _event: u32,
+            hwnd: HWND,
+            _idobject: i32,
+            _idchild: i32,
+            _ideventthread: u32,
+            _dwmseventtime: u32,
+        ) -> () {
+            // Use GetForegroundWindow and GetWindowThreadProcessId to get the process id of the current window
+            // then use OpenProcess, QueryFullProcessImageName, CloseHandle, and PathStripPath to get the name of the process
+            // then check if the process name is in the allowed_programs list
+            unsafe {
+                let mut process_id = 0;
+                let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+                let handle = OpenProcess(
+                    PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+                    false,
+                    process_id,
+                );
+                let handle = handle.unwrap_or_else(|err| {
+                    // Handle the error here
+                    panic!("Failed to open process handle: {:?}", err);
+                });
 
-        // Set the hook and store the handle
-        let hook = unsafe {
-            SetWindowsHookExW(
-                WH_KEYBOARD_LL,
-                Some(low_level_keyboard_proc_callback),
-                HINSTANCE::default(),
-                0,
-            )
+                let mut buffer = [0u16; 1024];
+                let mut size = buffer.len() as u32;
+                let _ = QueryFullProcessImageNameW(
+                    handle,
+                    PROCESS_NAME_FORMAT(0),
+                    PWSTR(buffer.as_mut_ptr()),
+                    &mut size,
+                );
+                let full_process_name = String::from_utf16_lossy(&buffer[..size as usize]);
+                let process_name = full_process_name.split('\\').last().unwrap();
+                let _ = CloseHandle(handle);
+
+                println!("Active process: {:?}", process_name);
+
+                let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
+                for program in allowed_programs.unwrap() {
+                    if process_name.contains(&program) {
+                        println!("{:?} is allowed", process_name);
+                        let hook = SetWindowsHookExW(
+                            WH_KEYBOARD_LL,
+                            Some(low_level_keyboard_proc_callback),
+                            HINSTANCE::default(),
+                            0,
+                        )
+                        .map_err(|e| e.to_string());
+                        let mut shared_state = SHARED_STATE.write().unwrap();
+                        shared_state.hook_handle = Some(hook.unwrap());
+                        return;
+                    }
+                }
+            }
+            {
+                let mut shared_state = SHARED_STATE.write().unwrap();
+                if let Some(hook_handle) = shared_state.hook_handle.take() {
+                    unsafe {
+                        let _ = UnhookWindowsHookEx(hook_handle);
+                    }
+                }
+            }
+        };
+
+        let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
+        if allowed_programs.is_some() {
+            let hook = unsafe {
+                SetWinEventHook(
+                    EVENT_OBJECT_FOCUS,
+                    EVENT_OBJECT_FOCUS,
+                    HINSTANCE::default(),
+                    Some(win_event_proc),
+                    0,
+                    0,
+                    0,
+                )
+            };
+            let mut shared_state = SHARED_STATE.write().unwrap();
+            shared_state.window_hook_handle = Some(hook);
+        } else {
+            let hook = unsafe {
+                SetWindowsHookExW(
+                    WH_KEYBOARD_LL,
+                    Some(low_level_keyboard_proc_callback),
+                    HINSTANCE::default(),
+                    0,
+                )
+            }
+            .map_err(|e| e.to_string())?;
+            let mut shared_state = SHARED_STATE.write().unwrap();
+            shared_state.hook_handle = Some(hook);
         }
-        .map_err(|e| e.to_string())?;
-        let mut shared_state = SHARED_STATE.write().unwrap();
-        shared_state.hook_handle = Some(hook);
 
         Ok(())
     }
@@ -187,11 +285,16 @@ impl KeyInterceptor {
                 let _ = UnhookWindowsHookEx(hook_handle);
             }
         }
+        if let Some(window_hook_handle) = shared_state.window_hook_handle.take() {
+            unsafe {
+                let _ = UnhookWinEvent(window_hook_handle);
+            }
+        }
     }
 
     pub fn is_running(&self) -> bool {
         let shared_state = SHARED_STATE.read().unwrap();
-        shared_state.hook_handle.is_some()
+        shared_state.hook_handle.is_some() || shared_state.window_hook_handle.is_some()
     }
 }
 
@@ -342,13 +445,16 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                             cloned_key_state.opposite_key_mapping.unwrap() as u32
                         };
 
-                        extended_flag = if is_extended_key(key_value) { KEYEVENTF_EXTENDEDKEY } else { KEYBD_EVENT_FLAGS(0) };
+                        extended_flag = if is_extended_key(key_value) {
+                            KEYEVENTF_EXTENDEDKEY
+                        } else {
+                            KEYBD_EVENT_FLAGS(0)
+                        };
 
                         let code = MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX);
 
                         code as u16
                     };
-
 
                     let ki = KEYBDINPUT {
                         wVk: VIRTUAL_KEY(0),
@@ -385,7 +491,11 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                             cloned_key_state.opposite_key_mapping.unwrap() as u32
                         };
 
-                        extended_flag = if is_extended_key(key_value) { KEYEVENTF_EXTENDEDKEY } else { KEYBD_EVENT_FLAGS(0) };
+                        extended_flag = if is_extended_key(key_value) {
+                            KEYEVENTF_EXTENDEDKEY
+                        } else {
+                            KEYBD_EVENT_FLAGS(0)
+                        };
 
                         let code = MapVirtualKeyW(key_value, MAPVK_VK_TO_VSC_EX);
 
@@ -429,9 +539,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         for (_, key_state) in key_states.iter().filter(|&(_, ks)| ks.is_pressed) {
             match key_state.result_type.as_str() {
                 "face_button" => face_buttons = face_buttons | key_state.result_value as u16,
-                "trigger_l" => {
-                    left_trigger = cmp::max(left_trigger, key_state.result_value as u8)
-                }
+                "trigger_l" => left_trigger = cmp::max(left_trigger, key_state.result_value as u8),
                 "trigger_r" => {
                     right_trigger = cmp::max(right_trigger, key_state.result_value as u8)
                 }
