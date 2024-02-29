@@ -61,7 +61,7 @@ function App() {
   const [isEditingBinds, setIsEditingBinds] = useState(false);
   const [isEditingSettings, setEditingSettings] = useState(false);
   const [err, setErr] = useState("");
-
+  const [isDirty, setIsDirty] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLogVisible, setIsLogVisible] = useState(false);
 
@@ -136,6 +136,12 @@ function App() {
         <div className="flex items-center justify-center gap-2 text-2xl">
           <div className="h-4 w-4 rounded-full bg-gray-500" />
           Disabled
+        </div>
+      )}
+
+      {isDirty && (
+        <div className="text-red-500">
+          <p>Please restart Overbind for your changes to take effect.</p>
         </div>
       )}
 
@@ -226,6 +232,7 @@ function App() {
               await runOverbind();
             }
           }}
+          onDirtySave={() => setIsDirty(true)}
           onErr={setErr}
         />
       )}

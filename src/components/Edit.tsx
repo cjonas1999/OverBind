@@ -385,8 +385,6 @@ function KeybindSettings({
                     </g>
                   </svg>
                 </button>
-                {/* </>
-                )} */}
               </td>
             </tr>
           ))}

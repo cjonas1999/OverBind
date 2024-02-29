@@ -195,15 +195,18 @@ impl KeyInterceptor {
             unsafe {
                 let mut process_id = 0;
                 let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
-                let handle = OpenProcess(
+                let handle_result = OpenProcess(
                     PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
                     false,
                     process_id,
                 );
-                let handle = handle.unwrap_or_else(|err| {
-                    // Handle the error here
-                    panic!("Failed to open process handle: {:?}", err);
-                });
+                let handle = match handle_result {
+                    Ok(handle) => handle,
+                    Err(err) => {
+                        println!("Error opening process: {:?}", err);
+                        return;
+                    }
+                };
 
                 let mut buffer = [0u16; 1024];
                 let mut size = buffer.len() as u32;
