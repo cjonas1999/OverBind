@@ -39,7 +39,7 @@ fn start_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorSt
         .unwrap();
 
     let mut interceptor = state.0.lock().unwrap();
-    interceptor.start().map_err(|e| e.to_string());
+    let _ = interceptor.start().map_err(|e| e.to_string());
 }
 
 fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {

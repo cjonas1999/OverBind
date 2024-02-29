@@ -189,9 +189,6 @@ impl KeyInterceptor {
             _ideventthread: u32,
             _dwmseventtime: u32,
         ) -> () {
-            // Use GetForegroundWindow and GetWindowThreadProcessId to get the process id of the current window
-            // then use OpenProcess, QueryFullProcessImageName, CloseHandle, and PathStripPath to get the name of the process
-            // then check if the process name is in the allowed_programs list
             unsafe {
                 let mut process_id = 0;
                 let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
@@ -247,7 +244,7 @@ impl KeyInterceptor {
                     }
                 }
             }
-        };
+        }
 
         let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
         if allowed_programs.is_some() {
