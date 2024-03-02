@@ -278,6 +278,24 @@ impl KeyInterceptor {
                         }
                     }
                     
+                    
+                    let gamepad = vigem_client::XGamepad {
+                        buttons: vigem_client::XButtons(0),
+                        left_trigger: 0,
+                        right_trigger: 0,
+                        thumb_lx: 0,
+                        thumb_ly: 0,
+                        thumb_rx: 0,
+                        thumb_ry: 0,
+                    };
+                
+                    let mut temp_target = shared_state.target.take();
+                    if let Some(ref mut target) = &mut temp_target {
+                        let _ = target.update(&gamepad);
+            
+                        shared_state.target = temp_target;
+                    }
+                    
                 }
             }
         }
