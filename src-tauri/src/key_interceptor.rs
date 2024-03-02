@@ -261,6 +261,23 @@ impl KeyInterceptor {
                     unsafe {
                         let _ = UnhookWindowsHookEx(hook_handle);
                     }
+
+                    {
+                        let mut key_states = KEY_STATES.write().unwrap();
+
+                        for (_, key_state) in key_states.iter_mut() {
+                            key_state.is_pressed = false;
+                        }
+                    }
+
+                    {
+                        let mut opposite_key_states = OPPOSITE_KEY_STATES.write().unwrap();
+
+                        for (_, key_state) in opposite_key_states.iter_mut() {
+                            key_state.is_pressed = false;
+                        }
+                    }
+                    
                 }
             }
         }
