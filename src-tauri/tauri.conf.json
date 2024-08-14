@@ -21,11 +21,18 @@
         "scope": [
           "$APPDATA/OverBind/*"
         ]
+      },
+      "os": {
+        "all": true
       }
     },
     "bundle": {
       "active": true,
-      "targets": "msi",
+      "targets": [
+        "deb",
+        "msi",
+        "appimage"
+      ],
       "identifier": "com.github.cjonas1999.overbind",
       "icon": [
         "icons/32x32.png",

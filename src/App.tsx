@@ -62,6 +62,7 @@ function App() {
   const [isEditingSettings, setEditingSettings] = useState(false);
   const [err, setErr] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+  const [isSettingsIncomplete, setIsSettingsIncomplete] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLogVisible, setIsLogVisible] = useState(false);
 
@@ -106,19 +107,35 @@ function App() {
 
   // update ui when tray menu is used
   useEffect(() => {
+
+    // Listen for panic events from the backend
+    listen('panic', (event) => {
+      const panicMessage = event.payload;
+      console.error("Panic occurred:", panicMessage);
+    });
+
+
     listen("tray_intercept_disable", () => {
       setIsOverbindRunning(false);
     });
     listen("tray_intercept_enable", () => {
       setIsOverbindRunning(true);
     });
-  }, []);
+    listen("settings_incomplete", (event) => {
+      const newIsSettingsIncomplete = event.payload as boolean;
+      setIsSettingsIncomplete(newIsSettingsIncomplete);
+      if (newIsSettingsIncomplete) {
+        stopOverbind();
+      }
+    });
 
-  useEffect(() => {
-    if (!init) {
-      init = true;
-      runOverbind();
-    }
+    // Wait for 100ms to ensure listeners are registered
+    setTimeout(() => {
+      if (!init) {
+        init = true;
+        runOverbind();
+      }
+    }, 100);
   }, []);
 
   return (
@@ -142,6 +159,13 @@ function App() {
       {isDirty && (
         <div className="text-red-500">
           <p>Please restart Overbind for your changes to take effect.</p>
+        </div>
+      )}
+
+      {!isDirty && isSettingsIncomplete && (
+        <div className="text-red-500">
+          <p>There are some settings that need to be configured for Overbind to run correctly.
+            Please go do Settings and configure them.</p>
         </div>
       )}
 
@@ -245,15 +269,14 @@ function App() {
             .map((log, i) => (
               <div
                 key={i}
-                className={`mb-2 ${
-                  log.type === "log"
-                    ? "text-blue-500"
-                    : log.type === "warn"
-                      ? "text-yellow-500"
-                      : log.type === "error"
-                        ? "text-red-500"
-                        : "text-white"
-                }`}
+                className={`mb-2 ${log.type === "log"
+                  ? "text-blue-500"
+                  : log.type === "warn"
+                    ? "text-yellow-500"
+                    : log.type === "error"
+                      ? "text-red-500"
+                      : "text-white"
+                  }`}
               >
                 {log.timestamp}. {log.message}
               </div>

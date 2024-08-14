@@ -1,18 +1,33 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use serde_json::Value;
-use std::env;
+
+#[cfg(target_os = "linux")]
+use linux_key_interceptor::LinuxKeyInterceptor;
+
+extern crate log;
+extern crate simplelog;
+
+use once_cell::sync::Lazy;
+use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
 #[cfg(target_os = "windows")]
-use std::fs::{self, File};
+use windows_key_interceptor::WindowsKeyInterceptor;
+
+use serde_json::Value;
+use std::fs::{self, create_dir_all, File};
 use std::io::{BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::{env, panic};
 use tauri::api::path::data_dir;
 mod key_interceptor;
+mod linux_key_interceptor;
+mod windows_key_interceptor;
 
-use crate::key_interceptor::KeyInterceptor;
+use crate::key_interceptor::KeyInterceptorTrait;
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
+use tauri::{Manager, State, Window};
+
+static WINDOW: Lazy<Arc<Mutex<Option<Window>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Serialize, Deserialize)]
 struct KeyConfig {
@@ -22,12 +37,31 @@ struct KeyConfig {
 }
 
 #[derive(Clone)]
-struct KeyInterceptorState(Arc<Mutex<KeyInterceptor>>);
+struct KeyInterceptorState(Arc<Mutex<Box<dyn KeyInterceptorTrait + Send>>>);
+
+impl KeyInterceptorState {
+    fn new(settings: Settings) -> Self {
+        #[cfg(target_os = "windows")]
+        let interceptor: Box<dyn KeyInterceptorTrait + Send> =
+            Box::new(WindowsKeyInterceptor::new());
+
+        #[cfg(target_os = "linux")]
+        let interceptor: Box<dyn KeyInterceptorTrait + Send> = Box::new(LinuxKeyInterceptor::new());
+
+        let interceptor_arc = Arc::new(Mutex::new(interceptor));
+        {
+            let mut interceptor = interceptor_arc.lock().unwrap();
+            interceptor.initialize(&settings).unwrap();
+        }
+        Self(interceptor_arc.clone())
+    }
+}
 
 #[derive(Deserialize, Clone)]
 struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
+    selected_input: Option<String>,
 }
 
 #[derive(Clone)]
@@ -81,9 +115,20 @@ fn make_enable_tray_menu() -> tauri::SystemTrayMenu {
 #[tauri::command]
 fn start_interception(
     app: tauri::AppHandle,
-    state: State<KeyInterceptorState>,
+    key_interceptor_state: State<KeyInterceptorState>,
+    settings_state: State<AppSettingsState>,
 ) -> Result<(), String> {
-    start_key_interception(&app, &state);
+    #[cfg(target_os = "linux")]
+    {
+        let settings = settings_state.0.lock().unwrap();
+        let window = app.get_window("main").unwrap();
+        if settings.selected_input == None {
+            window.emit("settings_incomplete", true).unwrap();
+        } else {
+            window.emit("settings_incomplete", false).unwrap();
+        }
+    }
+    start_key_interception(&app, &key_interceptor_state);
 
     Ok(())
 }
@@ -168,6 +213,7 @@ fn get_app_settings_path() -> Result<PathBuf, String> {
 
 fn read_settings() -> Result<Value, String> {
     let path = get_app_settings_path()?;
+    println!("Reading settings from {}", path.display());
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
 
@@ -204,24 +250,64 @@ fn save_app_settings(settings: Value, state: State<AppSettingsState>) -> Result<
     Ok(())
 }
 
+#[tauri::command]
+fn list_inputs() -> Result<Vec<String>, String> {
+    let mut inputs = Vec::new();
+    #[cfg(target_os = "linux")]
+    {
+        let input_dir = Path::new("/dev/input/by-id");
+        if let Ok(entries) = fs::read_dir(input_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    inputs.push(entry.file_name().to_string_lossy().to_string());
+                }
+            }
+        };
+        println!("Inputs: {:?}", inputs);
+    }
+    Ok(inputs)
+}
+
 fn main() {
+    let log_file_path = data_dir().unwrap().join("OverBind").join("error.log");
+    create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
+    let log_file = File::create(log_file_path).expect("Could not create log file");
+    CombinedLogger::init(vec![WriteLogger::new(
+        LevelFilter::Info,
+        Config::default(),
+        log_file,
+    )])
+    .expect("Could not initialize logger");
+
     let _ = ensure_config_file_exists();
     let _ = ensure_settings_file_exists();
 
     let settings_json = read_settings().unwrap();
     let settings: Settings = serde_json::from_value(settings_json).unwrap();
 
-    let interceptor = KeyInterceptor::new();
-    let interceptor_arc = Arc::new(Mutex::new(interceptor));
-    let interceptor_state = KeyInterceptorState(interceptor_arc.clone());
-    {
-        let mut interceptor = interceptor_arc.lock().unwrap();
-        interceptor.initialize(&settings).unwrap();
-    }
+    let interceptor_state = KeyInterceptorState::new(settings.clone());
     let settings_arc = Arc::new(Mutex::new(settings));
     let settings_state = AppSettingsState(settings_arc.clone());
 
     tauri::Builder::default()
+        .setup(|app| {
+            let main_window = app.get_window("main").unwrap();
+            {
+                let mut window_lock = WINDOW.lock().unwrap();
+                *window_lock = Some(main_window.clone());
+            }
+            panic::set_hook(Box::new(|panic_info| {
+                if let Ok(window_lock) = WINDOW.lock() {
+                    if let Some(window) = &*window_lock {
+                        window.emit("panic", panic_info.to_string()).unwrap();
+                    }
+                }
+                log::error!("{:?}", panic_info);
+                eprintln!("{:?}", panic_info);
+            }));
+
+            Ok(())
+        })
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(interceptor_state)
         .manage(settings_state)
@@ -233,6 +319,7 @@ fn main() {
             start_interception,
             stop_interception,
             is_interceptor_running,
+            list_inputs,
         ])
         .system_tray(tauri::SystemTray::new().with_menu(make_disable_tray_menu()))
         .on_window_event(|event| match event.event() {
@@ -290,7 +377,7 @@ fn main() {
             _ => {}
         })
         .build(tauri::generate_context!())
-        .unwrap() // Handle the error using unwrap
+        .expect("error while building OvrBind")
         .run(|_app_handle, _event| {
             // Here you can handle specific events if needed
         });

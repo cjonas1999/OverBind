@@ -1,20 +1,24 @@
 import { invoke } from "@tauri-apps/api";
+import { platform } from "@tauri-apps/api/os";
 import { useEffect, useState } from "react";
 import isEqual from "lodash/isEqual";
 import OptionsList from "./OptionsList";
+import Dropdown from "./Dropdown";
+import { cloneDeep } from "lodash";
 
 interface Setting {
   key: string;
   name: string;
-  value: boolean | string[];
+  value: boolean | string[] | string;
 }
 
 const settingNames = {
   close_to_tray: "Close to system tray",
   allowed_programs: "Allowed programs",
+  selected_input: "Input devices",
 };
 
-const dirtySettings = ["allowed_programs"];
+const dirtySettings = ["allowed_programs", "selected_input"];
 
 function SettingsModal({
   onCancel,
@@ -29,6 +33,8 @@ function SettingsModal({
 }) {
   const [originalSettings, setOriginalSettings] = useState({} as any);
   const [settings, setSettings] = useState([] as Setting[]);
+  const [inputs, setInputs] = useState([] as string[]);
+  const [userPlatform, setUserPlatform] = useState("");
 
   const saveSettings = () => {
     const settingsToSave = settings.reduce((acc, setting) => {
@@ -37,7 +43,7 @@ function SettingsModal({
     }, {} as any);
 
     const isDirty = dirtySettings.some(
-      (setting) => !isEqual(settingsToSave[setting], originalSettings[setting]),
+      (setting) => !isEqual(settingsToSave?.[setting], originalSettings?.[setting]),
     );
     if (isDirty) {
       onDirtySave();
@@ -50,10 +56,13 @@ function SettingsModal({
 
   const readSettings = () => {
     invoke("read_app_settings").then((response: any) => {
-      console.log(response);
       console.log(JSON.stringify(response));
 
-      setOriginalSettings(response);
+      if (!Object.keys(response).includes("selected_input") && userPlatform === "linux") {
+        response["selected_input"] = null;
+      }
+
+      setOriginalSettings(cloneDeep(response));
       setSettings(
         Object.keys(response).map((key) => {
           return {
@@ -63,10 +72,21 @@ function SettingsModal({
           };
         }),
       );
-    });
+    }).catch((err) => onErr(err));
   };
 
-  useEffect(readSettings, []);
+  useEffect(() => {
+    readSettings();
+
+    invoke("list_inputs").then((response: any) => {
+      setInputs(response);
+    });
+
+    platform().then((platform) => {
+      console.log('platform', platform);
+      setUserPlatform(platform);
+    });
+  }, []);
 
   const getSettingChanger = (setting: Setting) => {
     if (typeof setting.value === "boolean") {
@@ -91,7 +111,18 @@ function SettingsModal({
           }}
         />
       );
-    }
+    } else if (setting.key === "selected_input") {
+      return (
+        <Dropdown
+          options={inputs}
+          onChange={(newInput) => {
+            setting.value = newInput;
+            setSettings([...settings]);
+          }}
+          width={400}
+        >{`${setting.value}`}</Dropdown>
+      );
+    };
   };
 
   return (
@@ -124,7 +155,6 @@ function SettingsModal({
           Close
         </button>
       </div>
-      {/* </div> */}
     </div>
   );
 }
