@@ -8,6 +8,7 @@ const Dropdown = ({
   onBlur,
   hidden,
   openAt,
+  width,
 }: {
   options: string[];
   children?: ReactNode;
@@ -16,6 +17,7 @@ const Dropdown = ({
   onBlur?: () => void;
   hidden?: boolean;
   openAt?: { open: boolean; x: number; y: number };
+  width?: number;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownDirection, setDropdownDirection] = useState("down");
@@ -26,7 +28,7 @@ const Dropdown = ({
   const [optionsListLocation, setOptionsListLocation] = useState({
     x: 20,
     y: 20,
-    width: 224,
+    width: width ?? 224,
   });
 
   const toggleDropdown = () => {
@@ -105,9 +107,8 @@ const Dropdown = ({
       {hidden ? null : (
         <button
           ref={buttonRef}
-          className={`inline-flex justify-center gap-x-1.5 rounded-md bg-blue-900 px-4 py-2 shadow-sm hover:bg-blue-700 ${
-            typeof children === "string" ? "bg-blue-900" : "bg-gray-500"
-          }`}
+          className={`inline-flex justify-center gap-x-1.5 rounded-md bg-blue-900 px-4 py-2 shadow-sm hover:bg-blue-700 ${typeof children === "string" ? "bg-blue-900" : "bg-gray-500"
+            }`}
           onClick={toggleDropdown}
         >
           {children}
@@ -129,9 +130,8 @@ const Dropdown = ({
       {isOpen && (
         <div
           ref={optionsListRef}
-          className={`${"fixed"} z-10 rounded-md bg-blue-900 shadow-lg ${
-            dropdownDirection === "up" ? "bottom-full mb-1" : "mt-1"
-          }`}
+          className={`${"fixed"} z-10 rounded-md bg-blue-900 shadow-lg ${dropdownDirection === "up" ? "bottom-full mb-1" : "mt-1"
+            }`}
           style={{
             left: openAt?.x ?? optionsListLocation.x,
             top:
