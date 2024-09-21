@@ -19,7 +19,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
+    GetForegroundWindow, GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
@@ -57,9 +57,6 @@ static KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 static OPPOSITE_KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, OppositeKey>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
-
-static OPPOSITE_KEY_MAPPINGS: Lazy<Arc<RwLock<HashMap<u32, u32>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 struct SharedState {
@@ -123,7 +120,6 @@ impl KeyInterceptor {
             serde_json::from_str(&contents).map_err(|e| e.to_string())?;
         let mut key_states = HashMap::new();
         let mut opposite_key_states = HashMap::new();
-        let mut opposite_key_mappings = HashMap::new();
 
         for item in &data {
             let keycode =
@@ -143,51 +139,37 @@ impl KeyInterceptor {
         }
 
         for item in &data {
-            let keycode =
-                u32::from_str_radix(&item.keycode, 16).expect("Invalid hexadecimal string");
+            let keycode = u32::from_str_radix(&item.keycode, 16);
 
             if item.result_type == "socd" {
                 let opposite_keycode = item.result_value as u32;
 
-                let this_key_state_mapping = key_states.get(&keycode.clone());
-                let opposite_key_state_mapping = key_states.get(&opposite_keycode.clone());
+                // Check if key_state has a value for the opposite keycode and if so then use that value instead
+                let key_state = key_states.get(&keycode.clone().unwrap());
                 let mut key_type = String::from("keyboard");
-                let mut opposite_key_mapping = None;
+                let mut key_mapping = None;
 
-                if this_key_state_mapping.is_some()
-                    && (this_key_state_mapping.unwrap().result_type == "keyboard")
+                if key_state.is_some()
+                    && (key_state.unwrap().result_type == "keyboard"
+                        || key_state.unwrap().result_type == "face_button")
                 {
-                    opposite_key_mappings.insert(
-                        keycode.clone(),
-                        this_key_state_mapping.unwrap().result_value as u32,
-                    );
-                } else {
-                    opposite_key_mappings.insert(keycode.clone(), keycode.clone());
-                }
-
-                if opposite_key_state_mapping.is_some()
-                    && (opposite_key_state_mapping.unwrap().result_type == "keyboard"
-                        || opposite_key_state_mapping.unwrap().result_type == "face_button")
-                {
-                    key_type = opposite_key_state_mapping.unwrap().result_type.clone();
-                    opposite_key_mapping =
-                        Some(opposite_key_state_mapping.unwrap().result_value as u16);
+                    key_type = key_state.unwrap().result_type.clone();
+                    key_mapping = Some(key_state.unwrap().result_value as u16);
                 }
 
                 let opposite_key_state = opposite_key_states
-                    .entry(opposite_key_mappings.get(&keycode).unwrap().clone())
+                    .entry(keycode.clone().unwrap())
                     .or_insert_with(|| OppositeKey {
                         is_pressed: false,
                         is_virtual_pressed: false,
                         opposite_key_value: opposite_keycode,
                         opposite_key_type: key_type,
-                        opposite_key_mapping,
+                        opposite_key_mapping: key_mapping,
                     });
 
                 println!(
-                    "Keycode: {:?}, KeycodeMapping: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
+                    "Keycode: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
                     keycode,
-                    opposite_key_mappings.get(&keycode).unwrap(),
                     opposite_key_state.opposite_key_value,
                     opposite_key_state.opposite_key_mapping
                 );
@@ -196,7 +178,6 @@ impl KeyInterceptor {
 
         *KEY_STATES.write().unwrap() = key_states;
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
-        *OPPOSITE_KEY_MAPPINGS.write().unwrap() = opposite_key_mappings;
 
         self.should_run.store(true, Ordering::SeqCst);
         unsafe extern "system" fn win_event_proc(
@@ -210,7 +191,8 @@ impl KeyInterceptor {
         ) -> () {
             unsafe {
                 let mut process_id = 0;
-                let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+                let foreground_window = GetForegroundWindow();
+                let _ = GetWindowThreadProcessId(foreground_window, Some(&mut process_id));
                 let handle_result = OpenProcess(
                     PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
                     false,
@@ -433,35 +415,60 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         });
     }
 
+    // Keyboard Rebinds
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        if let Some(flag) = key_event_flag {
+            if let Some(key_state) = key_states.get(&key) {
+                if key_state.result_type == "keyboard" {
+                    let vk_code = key_state.result_value as u16;
+
+                    let ki = KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(vk_code),
+                        wScan: 0,
+                        dwFlags: flag,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    };
+
+                    let input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 { ki },
+                    };
+
+                    unsafe {
+                        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                    }
+
+                    return LRESULT(1);
+                }
+            }
+        }
+    }
+
     // SOCD
     {
         let mut opposite_key_states = OPPOSITE_KEY_STATES.write().unwrap();
-        let opposite_key_mappings = OPPOSITE_KEY_MAPPINGS.write().unwrap();
 
         let cloned_key_state;
-        if opposite_key_mappings.contains_key(&key) {
+        if opposite_key_states.contains_key(&key) {
             {
-                let mapped_key = opposite_key_mappings.get(&key).unwrap();
-                let key_state = opposite_key_states.get_mut(&mapped_key).unwrap();
+                let key_state = opposite_key_states.get_mut(&key).unwrap();
                 key_state.is_pressed = key_is_down;
                 key_state.is_virtual_pressed = key_is_down;
 
                 cloned_key_state = key_state.clone();
             }
 
-            let opposite_key_value = cloned_key_state.opposite_key_value as u32;
-            let opposite_key_mapping =
-                cloned_key_state.opposite_key_mapping.unwrap_or_default() as u32;
-            let mapping_opposite_key_state = opposite_key_states.get_mut(&opposite_key_mapping);
-            let opposite_key_state = match mapping_opposite_key_state {
-                Some(value) => value,
-                None => opposite_key_states.get_mut(&opposite_key_value).unwrap(),
-            };
+            let opposite_key_state = opposite_key_states
+                .get_mut(&cloned_key_state.opposite_key_value)
+                .unwrap();
 
             if key_is_down && opposite_key_state.is_pressed && opposite_key_state.is_virtual_pressed
             {
                 opposite_key_state.is_virtual_pressed = false;
 
+                // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                 {
                     let extended_flag;
                     let scan_code = {
@@ -507,6 +514,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             } else if !key_is_down && opposite_key_state.is_pressed {
                 opposite_key_state.is_virtual_pressed = true;
 
+                // if opposite_key_state.opposite_key_type.clone() != String::from("face_button") {
                 {
                     let extended_flag;
                     let scan_code = {
@@ -548,37 +556,6 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                         let inputs_size = std::mem::size_of::<INPUT>() as i32;
                         SendInput(inputs, inputs_size);
                     }
-                }
-            }
-        }
-    }
-
-    // Keyboard Rebinds
-    {
-        let key_states = KEY_STATES.read().unwrap();
-        if let Some(flag) = key_event_flag {
-            if let Some(key_state) = key_states.get(&key) {
-                if key_state.result_type == "keyboard" {
-                    let vk_code = key_state.result_value as u16;
-
-                    let ki = KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(vk_code),
-                        wScan: 0,
-                        dwFlags: flag,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    };
-
-                    let input = INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 { ki },
-                    };
-
-                    unsafe {
-                        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
-                    }
-
-                    return LRESULT(1);
                 }
             }
         }
