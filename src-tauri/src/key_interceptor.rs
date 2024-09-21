@@ -19,7 +19,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
+    GetForegroundWindow, GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
@@ -191,7 +191,8 @@ impl KeyInterceptor {
         ) -> () {
             unsafe {
                 let mut process_id = 0;
-                let _ = GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+                let foreground_window = GetForegroundWindow();
+                let _ = GetWindowThreadProcessId(foreground_window, Some(&mut process_id));
                 let handle_result = OpenProcess(
                     PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
                     false,
