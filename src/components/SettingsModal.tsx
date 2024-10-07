@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api";
-import { platform } from "@tauri-apps/api/os";
+import { invoke } from "@tauri-apps/api/core";
+import { platform } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "react";
 import isEqual from "lodash/isEqual";
 import OptionsList from "./OptionsList";
@@ -82,10 +82,8 @@ function SettingsModal({
       setInputs(response);
     });
 
-    platform().then((platform) => {
-      console.log('platform', platform);
-      setUserPlatform(platform);
-    });
+    console.log('platform', platform());
+    setUserPlatform(platform());
   }, []);
 
   const getSettingChanger = (setting: Setting) => {

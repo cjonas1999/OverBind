@@ -4,11 +4,13 @@
 #[cfg(target_os = "linux")]
 use linux_key_interceptor::LinuxKeyInterceptor;
 
+extern crate dirs;
 extern crate log;
 extern crate simplelog;
 
 use once_cell::sync::Lazy;
 use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
@@ -18,16 +20,16 @@ use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::{env, panic};
-use tauri::api::path::data_dir;
+use tauri::path::PathResolver;
 mod key_interceptor;
 mod linux_key_interceptor;
 mod windows_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State, Window};
+use tauri::{Emitter, EventTarget, Manager, State, WebviewWindow, Window};
 
-static WINDOW: Lazy<Arc<Mutex<Option<Window>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static WINDOW: Lazy<Arc<Mutex<Option<WebviewWindow>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Serialize, Deserialize)]
 struct KeyConfig {
@@ -68,16 +70,46 @@ struct Settings {
 struct AppSettingsState(Arc<Mutex<Settings>>);
 
 fn start_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
-    app.tray_handle()
-        .set_menu(make_disable_tray_menu())
-        .unwrap();
+    // app.tray_by_id("main_tray")
+    //     .unwrap()
+    //     .("disable")
+    //     .unwrap()
+    //     .as_menuitem()
+    //     .unwrap()
+    //     .set_enabled(true)
+    //     .unwrap();
+
+    // app.menu()
+    //     .unwrap()
+    //     .get("enable")
+    //     .unwrap()
+    //     .as_menuitem()
+    //     .unwrap()
+    //     .set_enabled(false)
+    //     .unwrap();
 
     let mut interceptor = state.0.lock().unwrap();
     let _ = interceptor.start().map_err(|e| e.to_string());
 }
 
 fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
-    app.tray_handle().set_menu(make_enable_tray_menu()).unwrap();
+    // app.menu()
+    //     .unwrap()
+    //     .get("disable")
+    //     .unwrap()
+    //     .as_menuitem()
+    //     .unwrap()
+    //     .set_enabled(false)
+    //     .unwrap();
+
+    // app.menu()
+    //     .unwrap()
+    //     .get("enable")
+    //     .unwrap()
+    //     .as_menuitem()
+    //     .unwrap()
+    //     .set_enabled(true)
+    //     .unwrap();
 
     let interceptor = state.0.lock().unwrap();
     interceptor.stop();
@@ -86,30 +118,6 @@ fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorSta
 fn is_key_interception_running(state: &State<KeyInterceptorState>) -> bool {
     let interceptor = state.0.lock().unwrap();
     interceptor.is_running()
-}
-
-fn make_disable_tray_menu() -> tauri::SystemTrayMenu {
-    let disble_interception = tauri::CustomMenuItem::new("disable".to_string(), "Disable OverBind");
-    let open_overbind_settings =
-        tauri::CustomMenuItem::new("settings".to_string(), "Open OverBind Settings");
-    let exit = tauri::CustomMenuItem::new("exit".to_string(), "Exit");
-
-    tauri::SystemTrayMenu::new()
-        .add_item(disble_interception)
-        .add_item(open_overbind_settings)
-        .add_item(exit)
-}
-
-fn make_enable_tray_menu() -> tauri::SystemTrayMenu {
-    let enable_interception = tauri::CustomMenuItem::new("enable".to_string(), "Enable OverBind");
-    let open_overbind_settings =
-        tauri::CustomMenuItem::new("settings".to_string(), "Open OverBind Settings");
-    let exit = tauri::CustomMenuItem::new("exit".to_string(), "Exit");
-
-    tauri::SystemTrayMenu::new()
-        .add_item(enable_interception)
-        .add_item(open_overbind_settings)
-        .add_item(exit)
 }
 
 #[tauri::command]
@@ -121,7 +129,7 @@ fn start_interception(
     #[cfg(target_os = "linux")]
     {
         let settings = settings_state.0.lock().unwrap();
-        let window = app.get_window("main").unwrap();
+        let window = app.get_webview_window("main").unwrap();
         if settings.selected_input == None {
             window.emit("settings_incomplete", true).unwrap();
         } else {
@@ -144,7 +152,7 @@ fn is_interceptor_running(state: State<KeyInterceptorState>) -> bool {
 }
 
 fn get_config_path() -> Result<PathBuf, String> {
-    match data_dir() {
+    match dirs::data_dir() {
         Some(mut path) => {
             path.push("OverBind"); // Use your app's unique folder name
             std::fs::create_dir_all(&path).map_err(|e| e.to_string())?; // Create the dir if it doesn't exist
@@ -200,7 +208,7 @@ fn ensure_settings_file_exists() -> Result<(), String> {
 }
 
 fn get_app_settings_path() -> Result<PathBuf, String> {
-    match data_dir() {
+    match dirs::data_dir() {
         Some(mut path) => {
             path.push("OverBind"); // Use your app's unique folder name
             std::fs::create_dir_all(&path).map_err(|e| e.to_string())?; // Create the dir if it doesn't exist
@@ -269,7 +277,7 @@ fn list_inputs() -> Result<Vec<String>, String> {
 }
 
 fn main() {
-    let log_file_path = data_dir().unwrap().join("OverBind").join("error.log");
+    let log_file_path = dirs::data_dir().unwrap().join("OverBind").join("error.log");
     create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
     let log_file = File::create(log_file_path).expect("Could not create log file");
     CombinedLogger::init(vec![WriteLogger::new(
@@ -290,8 +298,12 @@ fn main() {
     let settings_state = AppSettingsState(settings_arc.clone());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let main_window = app.get_window("main").unwrap();
+            let main_window = app.get_webview_window("main").unwrap();
             {
                 let mut window_lock = WINDOW.lock().unwrap();
                 *window_lock = Some(main_window.clone());
@@ -305,6 +317,93 @@ fn main() {
                 log::error!("{:?}", panic_info);
                 eprintln!("{:?}", panic_info);
             }));
+
+            let menu = MenuBuilder::new(app)
+                .item(&MenuItemBuilder::with_id("disable", "Disable OverBind").build(app)?)
+                .item(
+                    &MenuItemBuilder::with_id("enable", "Enable OverBind")
+                        .enabled(false)
+                        .build(app)?,
+                )
+                .item(&MenuItemBuilder::with_id("settings", "Open OverBind Settings").build(app)?)
+                .item(&MenuItemBuilder::with_id("exit", "Exit").build(app)?)
+                .build()?;
+            let tray = tauri::tray::TrayIconBuilder::with_id("main_tray")
+                .menu(&menu)
+                .on_tray_icon_event({
+                    let app_handle = app.handle().clone();
+                    move |_, event| match event {
+                        tauri::tray::TrayIconEvent::DoubleClick { .. } => {
+                            let window = app_handle.get_webview_window("main").unwrap();
+                            if window.is_visible().unwrap() {
+                                window.hide().unwrap();
+                            } else {
+                                window.show().unwrap();
+                                window.set_focus().unwrap();
+                            }
+                        }
+                        tauri::tray::TrayIconEvent::Click { .. } => {
+                            // Check if key interception is running
+                            let state = app_handle.state::<KeyInterceptorState>();
+                            let guard = state.0.lock().unwrap();
+                            let interceptor = guard.as_ref();
+                            if interceptor.is_running() {
+                                let _ = menu
+                                    .get("disable")
+                                    .unwrap()
+                                    .as_menuitem()
+                                    .unwrap()
+                                    .set_enabled(false);
+                                let _ = menu
+                                    .get("enable")
+                                    .unwrap()
+                                    .as_menuitem()
+                                    .unwrap()
+                                    .set_enabled(true);
+                            } else {
+                                let _ = menu
+                                    .get("disable")
+                                    .unwrap()
+                                    .as_menuitem()
+                                    .unwrap()
+                                    .set_enabled(true);
+                                let _ = menu
+                                    .get("enable")
+                                    .unwrap()
+                                    .as_menuitem()
+                                    .unwrap()
+                                    .set_enabled(false);
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .on_menu_event(|app, event| match event.id.0.as_ref() {
+                    "disable" => {
+                        let state = app.state::<KeyInterceptorState>();
+                        stop_key_interception(app, &state);
+
+                        let window = app.get_webview_window("main").unwrap();
+                        window.emit("tray_intercept_disable", "").unwrap();
+                    }
+                    "enable" => {
+                        let state = app.state::<KeyInterceptorState>();
+                        start_key_interception(app, &state);
+
+                        let window = app.get_webview_window("main").unwrap();
+                        window.emit("tray_intercept_enable", "").unwrap();
+                    }
+                    "settings" => {
+                        let window = app.get_webview_window("main").unwrap();
+                        window.show().unwrap();
+                        window.set_focus().unwrap();
+                    }
+                    "exit" => {
+                        std::process::exit(0);
+                    }
+                    _ => {}
+                })
+                .build(app)?;
 
             Ok(())
         })
@@ -321,59 +420,19 @@ fn main() {
             is_interceptor_running,
             list_inputs,
         ])
-        .system_tray(tauri::SystemTray::new().with_menu(make_disable_tray_menu()))
-        .on_window_event(|event| match event.event() {
+        .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                let app = event.window().app_handle();
-                let app_state = app.state::<AppSettingsState>();
-                let settings = app_state.0.lock().unwrap();
+                if window.label() == "main" {
+                    let app = window.app_handle();
+                    let app_state = app.state::<AppSettingsState>();
+                    let settings = app_state.0.lock().unwrap();
 
-                if settings.close_to_tray == true {
-                    event.window().hide().unwrap();
-                    api.prevent_close();
+                    if settings.close_to_tray == true {
+                        window.hide().unwrap();
+                        api.prevent_close();
+                    }
                 }
             }
-            _ => {}
-        })
-        .on_system_tray_event(|app, event| match event {
-            tauri::SystemTrayEvent::DoubleClick {
-                position: _,
-                size: _,
-                ..
-            } => {
-                let window = app.get_window("main").unwrap();
-                if window.is_visible().unwrap() {
-                    window.hide().unwrap();
-                } else {
-                    window.show().unwrap();
-                    window.set_focus().unwrap();
-                }
-            }
-            tauri::SystemTrayEvent::MenuItemClick { id, .. } => match id.as_str() {
-                "disable" => {
-                    let state = app.state::<KeyInterceptorState>();
-                    stop_key_interception(app, &state);
-
-                    let window = app.get_window("main").unwrap();
-                    window.emit("tray_intercept_disable", "").unwrap();
-                }
-                "enable" => {
-                    let state = app.state::<KeyInterceptorState>();
-                    start_key_interception(app, &state);
-
-                    let window = app.get_window("main").unwrap();
-                    window.emit("tray_intercept_enable", "").unwrap();
-                }
-                "settings" => {
-                    let window = app.get_window("main").unwrap();
-                    window.show().unwrap();
-                    window.set_focus().unwrap();
-                }
-                "exit" => {
-                    std::process::exit(0);
-                }
-                _ => {}
-            },
             _ => {}
         })
         .build(tauri::generate_context!())

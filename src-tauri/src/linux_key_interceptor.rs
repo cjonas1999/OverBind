@@ -2,14 +2,15 @@ use evdev::{Device, InputEventKind, Key};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::f32::consts::E;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use uinput::event::absolute::Hat::{X0, Y0};
 use uinput::event::absolute::Position::{RX, RY, RZ, X, Y, Z};
 use uinput::event::controller::DPad::{Down, Left, Right, Up};
@@ -85,6 +86,9 @@ struct SharedState {
     device_path: Option<String>,
     active_app_name: Option<String>,
 }
+
+unsafe impl Send for SharedState {}
+unsafe impl Sync for SharedState {}
 
 static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
     Arc::new(RwLock::new(SharedState {
@@ -380,6 +384,27 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                             let mut shared_state = SHARED_STATE.write().unwrap();
                             shared_state.active_app_name = Some(window_name);
                             println!("Active app name: {:?}", shared_state.active_app_name);
+
+                            let mut stream = UnixStream::connect("/tmp/cursor_overlay.sock")
+                                .expect("Failed to connect to cursor overlay");
+                            let mut command = None;
+                            if shared_state.allowed_programs.as_ref().is_none()
+                                || (shared_state
+                                    .allowed_programs
+                                    .as_ref()
+                                    .unwrap()
+                                    .contains(&shared_state.active_app_name.as_ref().unwrap()))
+                            {
+                                print!("Showing cursor");
+                                command = Some("show");
+                            } else {
+                                print!("Hiding cursor");
+                                command = Some("hide");
+                            }
+
+                            stream
+                                .write_all(command.unwrap().as_bytes())
+                                .expect("Failed to send command");
                         }
                     }
                     _ => {}
@@ -454,11 +479,23 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
             device.ungrab().unwrap();
         });
 
+        Command::new("cargo")
+            .arg("run")
+            .arg("--bin")
+            .arg("cursor-overlay")
+            .spawn()
+            .expect("Failed to start cursor overlay");
+
         Ok(())
     }
 
     fn stop(&self) {
         SHOULD_RUN.store(false, Ordering::SeqCst);
+
+        Command::new("pkill")
+            .arg("cursor-overlay")
+            .spawn()
+            .expect("Failed to stop cursor overlay");
     }
 
     fn is_running(&self) -> bool {

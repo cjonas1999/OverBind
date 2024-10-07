@@ -2,76 +2,53 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
-    "distDir": "../dist"
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
   },
-  "package": {
-    "productName": "OverBind",
-    "version": "1.4.2"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      },
-      "fs": {
-        "all": true,
-        "scope": [
-          "$APPDATA/OverBind/*"
-        ]
-      },
-      "os": {
-        "all": true
+  "bundle": {
+    "active": true,
+    "targets": [
+      "deb",
+      "msi",
+      "appimage"
+    ],
+    "windows": {
+      "allowDowngrades": true,
+      "certificateThumbprint": null,
+      "digestAlgorithm": null,
+      "nsis": null,
+      "timestampUrl": null,
+      "tsp": false,
+      "wix": null,
+      "webviewInstallMode": {
+        "silent": true,
+        "type": "downloadBootstrapper"
       }
     },
-    "bundle": {
-      "active": true,
-      "targets": [
-        "deb",
-        "msi",
-        "appimage"
-      ],
-      "identifier": "com.github.cjonas1999.overbind",
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
-      "externalBin": [],
-      "windows": {
-        "allowDowngrades": true,
-        "certificateThumbprint": null,
-        "digestAlgorithm": null,
-        "nsis": null,
-        "timestampUrl": null,
-        "tsp": false,
-        "webviewFixedRuntimePath": null,
-        "webviewInstallMode": {
-          "silent": true,
-          "type": "downloadBootstrapper"
-        },
-        "wix": null
-      }
-    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [],
+    "createUpdaterArtifacts": "v1Compatible"
+  },
+  "productName": "OverBind",
+  "mainBinaryName": "OverBind",
+  "version": "1.4.2",
+  "identifier": "com.github.cjonas1999.overbind",
+  "plugins": {
     "updater": {
-      "active": false,
-      "dialog": true,
       "pubkey": "",
       "windows": {
         "installMode": "passive",
         "installerArgs": []
       }
-    },
-    "systemTray": {
-      "iconPath": "icons/32x32.png"
-    },
-    "security": {
-      "csp": null
-    },
+    }
+  },
+  "app": {
     "windows": [
       {
         "fullscreen": false,
@@ -83,6 +60,12 @@
         "url": "index.html",
         "focus": true
       }
-    ]
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/32x32.png"
+    }
   }
 }

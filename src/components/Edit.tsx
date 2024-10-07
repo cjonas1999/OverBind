@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api";
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
 import Dropdown from "./Dropdown";
@@ -34,9 +34,9 @@ function KeybindSettings({
       ...(bind.type === "controller"
         ? CONTROLLER_INPUTS[bind.output]
         : {
-            result_type: bind.type,
-            result_value: WINDOWS_ECMA_KEYMAP[bind.output],
-          }),
+          result_type: bind.type,
+          result_value: WINDOWS_ECMA_KEYMAP[bind.output],
+        }),
     }));
 
     invoke("save_config", { configs: configToSave })
@@ -159,10 +159,10 @@ function KeybindSettings({
           const newKeybinds = binds.map((b) =>
             b.id === bind.id
               ? {
-                  ...b,
-                  input: activeKeybindId[1] ? name : b.input,
-                  output: activeKeybindId[1] ? b.output : name,
-                }
+                ...b,
+                input: activeKeybindId[1] ? name : b.input,
+                output: activeKeybindId[1] ? b.output : name,
+              }
               : b,
           );
           setBinds(newKeybinds);
@@ -246,10 +246,10 @@ function KeybindSettings({
                       badge={
                         bind.type === "socd"
                           ? (
-                              linkedBinds.findIndex(
-                                (b) => b[0] === bind.id || b[1] === bind.id,
-                              ) + 1
-                            ).toString()
+                            linkedBinds.findIndex(
+                              (b) => b[0] === bind.id || b[1] === bind.id,
+                            ) + 1
+                          ).toString()
                           : undefined
                       }
                     />
@@ -266,10 +266,10 @@ function KeybindSettings({
                       const newKeybinds = binds.map((b) =>
                         b.id === bind.id
                           ? {
-                              ...b,
-                              output: option,
-                              type: bind.type,
-                            }
+                            ...b,
+                            output: option,
+                            type: bind.type,
+                          }
                           : b,
                       );
                       setBinds(newKeybinds);
@@ -288,10 +288,10 @@ function KeybindSettings({
                       const newKeybinds = binds.map((b) =>
                         b.id === bind.id
                           ? {
-                              ...b,
-                              output: option,
-                              type: bind.type,
-                            }
+                            ...b,
+                            output: option,
+                            type: bind.type,
+                          }
                           : b,
                       );
                       setBinds(newKeybinds);
@@ -331,9 +331,9 @@ function KeybindSettings({
                     const newKeybinds = binds.map((b) =>
                       b.id === bind.id
                         ? {
-                            ...b,
-                            input: option,
-                          }
+                          ...b,
+                          input: option,
+                        }
                         : b,
                     );
                     setBinds(newKeybinds);
