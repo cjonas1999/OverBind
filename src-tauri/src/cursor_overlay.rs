@@ -2,7 +2,6 @@ use gtk::cairo::Context;
 use gtk::gdk::Display;
 use gtk::prelude::GtkWindowExt;
 use gtk::prelude::*;
-use gtk::subclass::socket;
 use gtk::{Application, ApplicationWindow};
 use std::io::Read;
 use std::os::unix::net::UnixListener;
