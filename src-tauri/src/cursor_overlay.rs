@@ -92,7 +92,7 @@ fn build_ui(app: &Application) {
         // Set transparent background
         cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
         cr.set_operator(gtk::cairo::Operator::Source);
-        cr.paint();
+        let _ = cr.paint();
         gtk::glib::Propagation::Proceed
     });
 

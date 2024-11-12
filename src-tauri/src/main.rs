@@ -62,7 +62,9 @@ impl KeyInterceptorState {
 struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
+    #[cfg(target_os = "linux")]
     selected_input: Option<String>,
+    #[cfg(target_os = "linux")]
     force_cursor: bool,
 }
 
