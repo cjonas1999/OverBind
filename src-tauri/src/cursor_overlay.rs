@@ -1,17 +1,28 @@
-#![cfg(target_os = "linux")]
+#[cfg(target_os = "linux")]
+mod linux_specific {
+    pub use gtk::cairo::Context;
+    pub use gtk::gdk::Display;
+    pub use gtk::prelude::GtkWindowExt;
+    pub use gtk::prelude::*;
+    pub use gtk::{Application, ApplicationWindow};
+    pub use std::io::Read;
+    pub use std::os::unix::net::UnixListener;
+    pub use std::time::{Duration, Instant};
+    pub use std::{fs, thread};
+}
 
-use gtk::cairo::Context;
-use gtk::gdk::Display;
-use gtk::prelude::GtkWindowExt;
-use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow};
-use std::io::Read;
-use std::os::unix::net::UnixListener;
-use std::time::{Duration, Instant};
-use std::{fs, thread};
+#[cfg(target_os = "linux")]
+use linux_specific::*;
 
+#[cfg(target_os = "linux")]
 static SHOW_CURSOR: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    println!("Cursor overlay is not supported on this platform");
+}
+
+#[cfg(target_os = "linux")]
 fn main() {
     // Create a Unix socket to listen for visibility commands
     let socket_path = "/tmp/cursor_overlay.sock";
@@ -46,6 +57,7 @@ fn main() {
     println!("Cursor overlay stopped with code: {:?}", return_code);
 }
 
+#[cfg(target_os = "linux")]
 fn build_ui(app: &Application) {
     // Create a new top-level window
     let window = ApplicationWindow::new(app);
@@ -150,6 +162,7 @@ fn build_ui(app: &Application) {
     window.show_all();
 }
 
+#[cfg(target_os = "linux")]
 fn draw_cursor(cr: &Context) {
     let cursor_size = 20.0; // Size of the entire cursor
     let rect_width = 2.0; // Width of the rectangles (thin)
