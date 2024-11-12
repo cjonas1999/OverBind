@@ -16,9 +16,10 @@ const settingNames = {
   close_to_tray: "Close to system tray",
   allowed_programs: "Allowed programs",
   selected_input: "Input devices",
+  force_cursor: "Show forced cursor",
 };
 
-const dirtySettings = ["allowed_programs", "selected_input"];
+const dirtySettings = ["allowed_programs", "selected_input", "force_cursor"];
 
 function SettingsModal({
   onCancel,
@@ -60,6 +61,10 @@ function SettingsModal({
 
       if (!Object.keys(response).includes("selected_input") && userPlatform === "linux") {
         response["selected_input"] = null;
+      }
+
+      if (!Object.keys(response).includes("force_cursor") && userPlatform === "linux") {
+        response["force_cursor"] = null;
       }
 
       setOriginalSettings(cloneDeep(response));

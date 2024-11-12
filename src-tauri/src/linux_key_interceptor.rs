@@ -6,11 +6,13 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
 use uinput::event::absolute::Hat::{X0, Y0};
 use uinput::event::absolute::Position::{RX, RY, RZ, X, Y, Z};
 use uinput::event::controller::DPad::{Down, Left, Right, Up};
@@ -42,6 +44,31 @@ x11rb::atom_manager! {
         WM_NAME,
         UTF8_STRING,
         STRING,
+    }
+}
+
+trait Killable {
+    fn kill(&mut self) -> std::io::Result<()>;
+}
+
+impl Killable for Child {
+    fn kill(&mut self) -> std::io::Result<()> {
+        std::process::Child::kill(self)
+    }
+}
+
+impl Killable for Option<CommandChild> {
+    fn kill(&mut self) -> std::io::Result<()> {
+        if let Some(child) = self.take() {
+            child
+                .kill()
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Child already killed",
+            ))
+        }
     }
 }
 
@@ -85,6 +112,8 @@ struct SharedState {
     allowed_programs: Option<Vec<String>>,
     device_path: Option<String>,
     active_app_name: Option<String>,
+    is_cursor_overlay_enabled: bool,
+    cursor_overlay_process: Option<Box<dyn Killable>>,
 }
 
 unsafe impl Send for SharedState {}
@@ -97,6 +126,8 @@ static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
         allowed_programs: None,
         device_path: None,
         active_app_name: None,
+        is_cursor_overlay_enabled: false,
+        cursor_overlay_process: None,
     }))
 });
 
@@ -224,11 +255,12 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         }
 
         shared_state.device_path = Some(device_name);
+        shared_state.is_cursor_overlay_enabled = settings.force_cursor;
 
         Ok(())
     }
 
-    fn start(&mut self) -> Result<(), String> {
+    fn start(&mut self, app: &tauri::AppHandle) -> Result<(), String> {
         // Read keybindings from file
         let path = get_config_path()?;
         let mut file = File::open(path).map_err(|e| e.to_string())?;
@@ -385,26 +417,28 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                             shared_state.active_app_name = Some(window_name);
                             println!("Active app name: {:?}", shared_state.active_app_name);
 
-                            let mut stream = UnixStream::connect("/tmp/cursor_overlay.sock")
-                                .expect("Failed to connect to cursor overlay");
-                            let mut command = None;
-                            if shared_state.allowed_programs.as_ref().is_none()
-                                || (shared_state
-                                    .allowed_programs
-                                    .as_ref()
-                                    .unwrap()
-                                    .contains(&shared_state.active_app_name.as_ref().unwrap()))
-                            {
-                                print!("Showing cursor");
-                                command = Some("show");
-                            } else {
-                                print!("Hiding cursor");
-                                command = Some("hide");
-                            }
+                            if shared_state.is_cursor_overlay_enabled {
+                                let mut stream = UnixStream::connect("/tmp/cursor_overlay.sock")
+                                    .expect("Failed to connect to cursor overlay");
+                                let mut command = None;
+                                if shared_state.allowed_programs.as_ref().is_none()
+                                    || (shared_state
+                                        .allowed_programs
+                                        .as_ref()
+                                        .unwrap()
+                                        .contains(&shared_state.active_app_name.as_ref().unwrap()))
+                                {
+                                    print!("Showing cursor");
+                                    command = Some("show");
+                                } else {
+                                    print!("Hiding cursor");
+                                    command = Some("hide");
+                                }
 
-                            stream
-                                .write_all(command.unwrap().as_bytes())
-                                .expect("Failed to send command");
+                                stream
+                                    .write_all(command.unwrap().as_bytes())
+                                    .expect("Failed to send command");
+                            }
                         }
                     }
                     _ => {}
@@ -479,23 +513,75 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
             device.ungrab().unwrap();
         });
 
-        Command::new("cargo")
-            .arg("run")
-            .arg("--bin")
-            .arg("cursor-overlay")
-            .spawn()
-            .expect("Failed to start cursor overlay");
+        {
+            let mut shared_state = SHARED_STATE.write().unwrap();
+            if shared_state.is_cursor_overlay_enabled {
+                let child: Box<dyn Killable> = if tauri::is_dev() {
+                    println!("Starting cursor overlay in dev");
+                    Box::new(
+                        Command::new("cargo")
+                            .arg("run")
+                            .arg("--bin")
+                            .arg("cursor-overlay-x86_64-unknown-linux-gnu")
+                            .spawn()
+                            .expect("Failed to start cursor overlay"),
+                    )
+                } else {
+                    println!("Starting cursor overlay in prod");
+                    let sidecar_command = app.shell().sidecar("cursor-overlay").unwrap();
+                    let (mut rx, child) = sidecar_command
+                        .spawn()
+                        .expect("Failed to start cursor overlay");
+
+                    tauri::async_runtime::spawn(async move {
+                        // read events such as stdout
+                        while let Some(event) = rx.recv().await {
+                            match event {
+                                CommandEvent::Stdout(data) => {
+                                    println!(
+                                        "cursor-overlay stdout: {}",
+                                        String::from_utf8(data).unwrap_or("Unknown".to_string())
+                                    );
+                                }
+                                CommandEvent::Stderr(data) => {
+                                    println!(
+                                        "cursor-overlay stderr: {}",
+                                        String::from_utf8(data).unwrap_or("Unknown".to_string())
+                                    );
+                                }
+                                CommandEvent::Terminated(code) => {
+                                    println!(
+                                        "cursor-overlay exited with code: {}",
+                                        code.code.unwrap_or(1337).to_string()
+                                    );
+                                }
+                                CommandEvent::Error(data) => {
+                                    println!("cursor-overlay error: {}", data)
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+
+                    Box::new(Some(child))
+                };
+
+                shared_state.cursor_overlay_process = Some(child);
+            }
+        }
 
         Ok(())
     }
 
-    fn stop(&self) {
+    fn stop(&self, _app: &tauri::AppHandle) {
         SHOULD_RUN.store(false, Ordering::SeqCst);
 
-        Command::new("pkill")
-            .arg("cursor-overlay")
-            .spawn()
-            .expect("Failed to stop cursor overlay");
+        {
+            let mut shared_state = SHARED_STATE.write().unwrap();
+            if let Some(child) = shared_state.cursor_overlay_process.as_mut() {
+                child.kill().expect("Failed to stop cursor overlay");
+            }
+        }
     }
 
     fn is_running(&self) -> bool {

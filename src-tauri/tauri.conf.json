@@ -32,7 +32,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [],
     "createUpdaterArtifacts": "v1Compatible"
   },
   "productName": "OverBind",

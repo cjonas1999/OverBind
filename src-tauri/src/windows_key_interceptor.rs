@@ -110,7 +110,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         Ok(())
     }
 
-    fn start(&mut self) -> Result<(), String> {
+    fn start(&mut self, _: &tauri::AppHandle) -> Result<(), String> {
         // Read keybindings from file
         let path = get_config_path()?;
         let mut file = File::open(path).map_err(|e| e.to_string())?;
@@ -314,7 +314,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         Ok(())
     }
 
-    fn stop(&self) {
+    fn stop(&self, _: &tauri::AppHandle) {
         let mut shared_state = SHARED_STATE.write().unwrap();
         if let Some(hook_handle) = shared_state.hook_handle.take() {
             unsafe {

@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "externalBin": [
+      "target/release/cursor-overlay"
+    ]
+  }
+}

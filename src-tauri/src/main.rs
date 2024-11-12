@@ -64,6 +64,7 @@ struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
     selected_input: Option<String>,
+    force_cursor: bool,
 }
 
 #[derive(Clone)]
@@ -89,7 +90,7 @@ fn start_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorSt
     //     .unwrap();
 
     let mut interceptor = state.0.lock().unwrap();
-    let _ = interceptor.start().map_err(|e| e.to_string());
+    let _ = interceptor.start(app).map_err(|e| e.to_string());
 }
 
 fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
@@ -112,7 +113,7 @@ fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorSta
     //     .unwrap();
 
     let interceptor = state.0.lock().unwrap();
-    interceptor.stop();
+    interceptor.stop(app);
 }
 
 fn is_key_interception_running(state: &State<KeyInterceptorState>) -> bool {
@@ -404,6 +405,12 @@ fn main() {
                     _ => {}
                 })
                 .build(app)?;
+
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .expect("Failed to get resource dir");
+            std::env::set_var("OVERBIND_RESOURCE_DIR", resource_dir);
 
             Ok(())
         })

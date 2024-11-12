@@ -6,6 +6,6 @@
     "linux"
   ],
   "permissions": [
-    "updater:default"
+    "core:default"
   ]
 }

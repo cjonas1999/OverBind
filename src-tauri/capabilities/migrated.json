@@ -23,6 +23,9 @@
       ]
     },
     "shell:allow-open",
+    "shell:allow-execute",
+    "shell:allow-kill",
+    "shell:allow-spawn",
     "os:allow-platform",
     "os:allow-version",
     "os:allow-os-type",

@@ -41,7 +41,8 @@ fn main() {
 
     println!("Starting cursor overlay");
     app.connect_activate(build_ui);
-    app.run();
+    let return_code = app.run();
+    println!("Cursor overlay stopped with code: {:?}", return_code);
 }
 
 fn build_ui(app: &Application) {
