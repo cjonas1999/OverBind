@@ -21,7 +21,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
+    GetForegroundWindow, GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
@@ -31,6 +31,7 @@ use windows::Win32::{
     },
 };
 
+use crate::key_interceptor::KeyInterceptorTrait;
 use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
