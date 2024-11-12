@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use evdev::{Device, InputEventKind, Key};
 use once_cell::sync::Lazy;
 use serde::Deserialize;

@@ -1,16 +1,16 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(target_os = "linux")]
-use linux_key_interceptor::LinuxKeyInterceptor;
-
 extern crate dirs;
 extern crate log;
 extern crate simplelog;
 
+#[cfg(target_os = "linux")]
+use linux_key_interceptor::LinuxKeyInterceptor;
+
 use once_cell::sync::Lazy;
 use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
-use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
@@ -20,14 +20,13 @@ use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::{env, panic};
-use tauri::path::PathResolver;
 mod key_interceptor;
 mod linux_key_interceptor;
 mod windows_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, EventTarget, Manager, State, WebviewWindow, Window};
+use tauri::{Emitter, Manager, State, WebviewWindow};
 
 static WINDOW: Lazy<Arc<Mutex<Option<WebviewWindow>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
