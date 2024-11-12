@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use gtk::cairo::Context;
 use gtk::gdk::Display;
 use gtk::prelude::GtkWindowExt;
