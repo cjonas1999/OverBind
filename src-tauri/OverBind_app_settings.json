@@ -1,6 +1,4 @@
 {
     "close_to_tray": false,
-    "allowed_programs": [],
-    "selected_input": null,
-    "force_cursor": false
+    "allowed_programs": []
 }

@@ -420,26 +420,33 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                             println!("Active app name: {:?}", shared_state.active_app_name);
 
                             if shared_state.is_cursor_overlay_enabled {
-                                let mut stream = UnixStream::connect("/tmp/cursor_overlay.sock")
-                                    .expect("Failed to connect to cursor overlay");
-                                let mut command = None;
-                                if shared_state.allowed_programs.as_ref().is_none()
-                                    || (shared_state
-                                        .allowed_programs
-                                        .as_ref()
-                                        .unwrap()
-                                        .contains(&shared_state.active_app_name.as_ref().unwrap()))
-                                {
-                                    print!("Showing cursor");
-                                    command = Some("show");
-                                } else {
-                                    print!("Hiding cursor");
-                                    command = Some("hide");
-                                }
+                                match UnixStream::connect("/tmp/cursor_overlay.sock") {
+                                    Ok(mut stream) => {
+                                        let mut command = None;
+                                        if shared_state.allowed_programs.as_ref().is_none()
+                                            || (shared_state
+                                                .allowed_programs
+                                                .as_ref()
+                                                .unwrap()
+                                                .contains(
+                                                    &shared_state.active_app_name.as_ref().unwrap(),
+                                                ))
+                                        {
+                                            print!("Showing cursor");
+                                            command = Some("show");
+                                        } else {
+                                            println!("Hiding cursor");
+                                            command = Some("hide");
+                                        }
 
-                                stream
-                                    .write_all(command.unwrap().as_bytes())
-                                    .expect("Failed to send command");
+                                        stream
+                                            .write_all(command.unwrap().as_bytes())
+                                            .expect("Failed to send command");
+                                    }
+                                    Err(e) => {
+                                        println!("Failed to connect to cursor overlay. You may have to delete the socket file at /tmp/cursor_overlay.sock and restart OverBind. Error: {}", e);
+                                    }
+                                }
                             }
                         }
                     }
@@ -512,6 +519,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                 }
             }
 
+            println!("Ungrabbing device");
             device.ungrab().unwrap();
         });
 

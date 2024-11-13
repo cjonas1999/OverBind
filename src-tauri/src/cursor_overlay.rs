@@ -6,7 +6,9 @@ mod linux_specific {
     pub use gtk::prelude::*;
     pub use gtk::{Application, ApplicationWindow};
     pub use std::io::Read;
+    pub use std::os::unix::fs::PermissionsExt;
     pub use std::os::unix::net::UnixListener;
+    pub use std::process::Command;
     pub use std::time::{Duration, Instant};
     pub use std::{fs, thread};
 }
@@ -30,6 +32,15 @@ fn main() {
         fs::remove_file(socket_path).expect("Failed to remove existing socket file");
     }
     let listener: UnixListener = UnixListener::bind(socket_path).unwrap();
+
+    Command::new("chown")
+        .arg(":input")
+        .arg(socket_path)
+        .status()
+        .expect("Failed to change ownership of socket file");
+
+    fs::set_permissions(socket_path, fs::Permissions::from_mode(0o770))
+        .expect("Failed to set permissions on socket file");
 
     // Spawn a thread to listen for commands and update the visibility flag
     thread::spawn(move || {

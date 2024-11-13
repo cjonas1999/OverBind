@@ -10,6 +10,7 @@ use linux_key_interceptor::LinuxKeyInterceptor;
 
 use once_cell::sync::Lazy;
 use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
+use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
@@ -63,8 +64,10 @@ struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
     #[cfg(target_os = "linux")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     selected_input: Option<String>,
     #[cfg(target_os = "linux")]
+    #[serde(default)]
     force_cursor: bool,
 }
 
@@ -72,46 +75,34 @@ struct Settings {
 struct AppSettingsState(Arc<Mutex<Settings>>);
 
 fn start_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
-    // app.tray_by_id("main_tray")
-    //     .unwrap()
-    //     .("disable")
-    //     .unwrap()
-    //     .as_menuitem()
-    //     .unwrap()
-    //     .set_enabled(true)
-    //     .unwrap();
-
-    // app.menu()
-    //     .unwrap()
-    //     .get("enable")
-    //     .unwrap()
-    //     .as_menuitem()
-    //     .unwrap()
-    //     .set_enabled(false)
-    //     .unwrap();
+    let icon = Image::from_path(
+        app.path()
+            .resource_dir()
+            .unwrap()
+            .join("icons/tray_icon_on.png"),
+    )
+    .unwrap();
+    app.tray_by_id("main_tray")
+        .unwrap()
+        .set_icon(Some(icon))
+        .unwrap();
 
     let mut interceptor = state.0.lock().unwrap();
     let _ = interceptor.start(app).map_err(|e| e.to_string());
 }
 
 fn stop_key_interception(app: &tauri::AppHandle, state: &State<KeyInterceptorState>) {
-    // app.menu()
-    //     .unwrap()
-    //     .get("disable")
-    //     .unwrap()
-    //     .as_menuitem()
-    //     .unwrap()
-    //     .set_enabled(false)
-    //     .unwrap();
-
-    // app.menu()
-    //     .unwrap()
-    //     .get("enable")
-    //     .unwrap()
-    //     .as_menuitem()
-    //     .unwrap()
-    //     .set_enabled(true)
-    //     .unwrap();
+    let icon = Image::from_path(
+        app.path()
+            .resource_dir()
+            .unwrap()
+            .join("icons/tray_icon_off.png"),
+    )
+    .unwrap();
+    app.tray_by_id("main_tray")
+        .unwrap()
+        .set_icon(Some(icon))
+        .unwrap();
 
     let interceptor = state.0.lock().unwrap();
     interceptor.stop(app);
@@ -322,16 +313,20 @@ fn main() {
 
             let menu = MenuBuilder::new(app)
                 .item(&MenuItemBuilder::with_id("disable", "Disable OverBind").build(app)?)
-                .item(
-                    &MenuItemBuilder::with_id("enable", "Enable OverBind")
-                        .enabled(false)
-                        .build(app)?,
-                )
+                .item(&MenuItemBuilder::with_id("enable", "Enable OverBind").build(app)?)
                 .item(&MenuItemBuilder::with_id("settings", "Open OverBind Settings").build(app)?)
                 .item(&MenuItemBuilder::with_id("exit", "Exit").build(app)?)
                 .build()?;
-            let tray = tauri::tray::TrayIconBuilder::with_id("main_tray")
+            let tray_icon = Image::from_path(
+                app.path()
+                    .resource_dir()
+                    .unwrap()
+                    .join("icons/tray_icon_on.png"),
+            )
+            .unwrap();
+            let _ = tauri::tray::TrayIconBuilder::with_id("main_tray")
                 .menu(&menu)
+                .icon(tray_icon)
                 .on_tray_icon_event({
                     let app_handle = app.handle().clone();
                     move |_, event| match event {
@@ -348,34 +343,19 @@ fn main() {
                             // Check if key interception is running
                             let state = app_handle.state::<KeyInterceptorState>();
                             let guard = state.0.lock().unwrap();
-                            let interceptor = guard.as_ref();
-                            if interceptor.is_running() {
-                                let _ = menu
-                                    .get("disable")
-                                    .unwrap()
-                                    .as_menuitem()
-                                    .unwrap()
-                                    .set_enabled(false);
-                                let _ = menu
-                                    .get("enable")
-                                    .unwrap()
-                                    .as_menuitem()
-                                    .unwrap()
-                                    .set_enabled(true);
-                            } else {
-                                let _ = menu
-                                    .get("disable")
-                                    .unwrap()
-                                    .as_menuitem()
-                                    .unwrap()
-                                    .set_enabled(true);
-                                let _ = menu
-                                    .get("enable")
-                                    .unwrap()
-                                    .as_menuitem()
-                                    .unwrap()
-                                    .set_enabled(false);
-                            }
+                            let _interceptor = guard.as_ref(); // TODO: Figure out how to change menu item names
+                            let _ = menu
+                                .get("disable")
+                                .unwrap()
+                                .as_menuitem()
+                                .unwrap()
+                                .set_enabled(true);
+                            let _ = menu
+                                .get("enable")
+                                .unwrap()
+                                .as_menuitem()
+                                .unwrap()
+                                .set_enabled(true);
                         }
                         _ => {}
                     }

@@ -32,7 +32,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": "v1Compatible"
+    "createUpdaterArtifacts": "v1Compatible",
+    "resources": [
+      "icons/tray_icon_on.png",
+      "icons/tray_icon_off.png"
+    ]
   },
   "productName": "OverBind",
   "mainBinaryName": "OverBind",
@@ -62,9 +66,6 @@
     ],
     "security": {
       "csp": null
-    },
-    "trayIcon": {
-      "iconPath": "icons/32x32.png"
     }
   }
 }

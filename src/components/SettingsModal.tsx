@@ -35,7 +35,6 @@ function SettingsModal({
   const [originalSettings, setOriginalSettings] = useState({} as any);
   const [settings, setSettings] = useState([] as Setting[]);
   const [inputs, setInputs] = useState([] as string[]);
-  const [userPlatform, setUserPlatform] = useState("");
 
   const saveSettings = () => {
     const settingsToSave = settings.reduce((acc, setting) => {
@@ -58,25 +57,24 @@ function SettingsModal({
   const readSettings = () => {
     invoke("read_app_settings").then((response: any) => {
       console.log(JSON.stringify(response));
+      const userPlatform = platform();
 
       if (!Object.keys(response).includes("selected_input") && userPlatform === "linux") {
         response["selected_input"] = null;
       }
 
       if (!Object.keys(response).includes("force_cursor") && userPlatform === "linux") {
-        response["force_cursor"] = null;
+        response["force_cursor"] = false;
       }
 
       setOriginalSettings(cloneDeep(response));
-      setSettings(
-        Object.keys(response).map((key) => {
-          return {
-            key,
-            name: settingNames[key as keyof typeof settingNames],
-            value: response[key],
-          };
-        }),
-      );
+      setSettings(Object.keys(response).map((key) => {
+        return {
+          key,
+          name: settingNames[key as keyof typeof settingNames],
+          value: response[key],
+        };
+      }));
     }).catch((err) => onErr(err));
   };
 
@@ -86,9 +84,6 @@ function SettingsModal({
     invoke("list_inputs").then((response: any) => {
       setInputs(response);
     });
-
-    console.log('platform', platform());
-    setUserPlatform(platform());
   }, []);
 
   const getSettingChanger = (setting: Setting) => {
