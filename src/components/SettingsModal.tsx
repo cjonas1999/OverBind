@@ -15,6 +15,7 @@ interface Setting {
 const settingNames = {
   close_to_tray: "Close to system tray",
   allowed_programs: "Allowed programs",
+  block_kb_on_controller: "Block keyboard inputs on controller binds",
   selected_input: "Input devices",
   force_cursor: "Show forced cursor",
 };
@@ -58,6 +59,10 @@ function SettingsModal({
     invoke("read_app_settings").then((response: any) => {
       console.log(JSON.stringify(response));
       const userPlatform = platform();
+
+      if (!Object.keys(response).includes("block_kb_on_controller")) {
+        response["block_kb_on_controller"] = false;
+      }
 
       if (!Object.keys(response).includes("selected_input") && userPlatform === "linux") {
         response["selected_input"] = null;

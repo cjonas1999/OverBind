@@ -21,7 +21,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC_EX, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS, LLKHF_INJECTED,
+    GetForegroundWindow, GetWindowThreadProcessId, EVENT_OBJECT_FOCUS, KBDLLHOOKSTRUCT_FLAGS,
+    LLKHF_INJECTED,
 };
 use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
@@ -67,6 +68,7 @@ struct SharedState {
     hook_handle: Option<HHOOK>,
     window_hook_handle: Option<HWINEVENTHOOK>,
     allowed_programs: Option<Vec<String>>,
+    block_kb_on_controller: bool,
 }
 
 static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
@@ -75,6 +77,7 @@ static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
         hook_handle: None,
         window_hook_handle: None,
         allowed_programs: None,
+        block_kb_on_controller: false,
     }))
 });
 
@@ -107,6 +110,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             println!("Allowed programs: {:?}", settings.allowed_programs);
             shared_state.allowed_programs = Some(settings.allowed_programs.clone());
         }
+        shared_state.block_kb_on_controller = settings.block_kb_on_controller;
 
         Ok(())
     }
@@ -636,6 +640,10 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
             shared_state.target = temp_target;
         }
+    }
+
+    if shared_state.block_kb_on_controller {
+        return LRESULT(1);
     }
 
     return CallNextHookEx(None, n_code, w_param, l_param);

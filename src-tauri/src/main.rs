@@ -63,6 +63,7 @@ impl KeyInterceptorState {
 struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
+    block_kb_on_controller: bool,
     #[cfg(target_os = "linux")]
     #[serde(skip_serializing_if = "Option::is_none")]
     selected_input: Option<String>,

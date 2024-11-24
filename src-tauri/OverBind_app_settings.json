@@ -1,4 +1,5 @@
 {
     "close_to_tray": false,
+    "block_kb_on_controller": false,
     "allowed_programs": []
 }
