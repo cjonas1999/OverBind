@@ -116,6 +116,7 @@ struct SharedState {
     active_app_name: Option<String>,
     is_cursor_overlay_enabled: bool,
     cursor_overlay_process: Option<Box<dyn Killable>>,
+    block_kb_on_controller: bool,
 }
 
 unsafe impl Send for SharedState {}
@@ -130,6 +131,7 @@ static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
         active_app_name: None,
         is_cursor_overlay_enabled: false,
         cursor_overlay_process: None,
+        block_kb_on_controller: false,
     }))
 });
 
@@ -269,6 +271,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
 
         shared_state.device_path = Some(device_name);
         shared_state.is_cursor_overlay_enabled = settings.force_cursor;
+        shared_state.block_kb_on_controller = settings.block_kb_on_controller;
 
         Ok(())
     }
@@ -534,6 +537,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
             device.ungrab().unwrap();
         });
 
+        // Cursor overlay
         {
             let mut shared_state = SHARED_STATE.write().unwrap();
             if shared_state.is_cursor_overlay_enabled {
@@ -759,6 +763,10 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                     key_is_down,
                 );
             }
+        } else {
+            send_keyboard_event(key_code, key_is_down);
+            sync_keyboard();
+            return;
         }
     }
 
@@ -780,8 +788,9 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
         }
     }
 
-    // Sent original key event
-    send_keyboard_event(key_code, key_is_down);
+    if !SHARED_STATE.read().unwrap().block_kb_on_controller {
+        send_keyboard_event(key_code, key_is_down);
+    }
 
     sync_keyboard();
     sync_controller();
