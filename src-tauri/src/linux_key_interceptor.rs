@@ -253,6 +253,17 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                         device_name = format!("/dev/input/{}", input_device.to_str().unwrap());
                     }
                 }
+            } else {
+                let backup_path =
+                    Path::new("/dev/input/by-path").join(settings.selected_input.as_ref().unwrap());
+                if backup_path.exists() {
+                    if let Ok(input_path) = fs::read_link(backup_path) {
+                        if let Some(input_device) = input_path.file_name() {
+                            println!("Found input device: {:?}", input_device);
+                            device_name = format!("/dev/input/{}", input_device.to_str().unwrap());
+                        }
+                    }
+                }
             }
         }
 

@@ -264,6 +264,16 @@ fn list_inputs() -> Result<Vec<String>, String> {
                 }
             }
         };
+        if (inputs.len() == 0) {
+            let input_dir = Path::new("/dev/input/by-path");
+            if let Ok(entries) = fs::read_dir(input_dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        inputs.push(entry.file_name().to_string_lossy().to_string());
+                    }
+                }
+            };
+        }
         println!("Inputs: {:?}", inputs);
     }
     Ok(inputs)
