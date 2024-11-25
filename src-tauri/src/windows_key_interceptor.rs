@@ -405,6 +405,12 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         _ => return CallNextHookEx(None, n_code, w_param, l_param),
     };
 
+    let mut disable_keyboard = false;
+    {
+        let shared_state = SHARED_STATE.write().unwrap();
+        disable_keyboard = shared_state.block_kb_on_controller
+    }
+
     // Update Key State
     let mut key_event_flag = None;
     {
@@ -421,7 +427,10 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     }
 
     // Keyboard Rebinds
-    {
+    'rebind: {
+        if disable_keyboard {
+            break 'rebind;
+        }
         let key_states = KEY_STATES.read().unwrap();
         if let Some(flag) = key_event_flag {
             if let Some(key_state) = key_states.get(&key) {
@@ -452,7 +461,11 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
     }
 
     // SOCD
-    {
+    'socd: {
+        if disable_keyboard {
+            break 'socd;
+        }
+
         let mut opposite_key_states = OPPOSITE_KEY_STATES.write().unwrap();
 
         let cloned_key_state;
@@ -642,7 +655,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         }
     }
 
-    if shared_state.block_kb_on_controller {
+    if disable_keyboard {
         return LRESULT(1);
     }
 
