@@ -8,6 +8,9 @@ extern crate simplelog;
 #[cfg(target_os = "linux")]
 use linux_key_interceptor::LinuxKeyInterceptor;
 
+#[cfg(target_os = "macos")]
+use mac_key_interceptor::MacKeyInterceptor;
+
 use once_cell::sync::Lazy;
 use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
 use tauri::image::Image;
@@ -24,6 +27,7 @@ use std::{env, panic};
 mod key_interceptor;
 mod linux_key_interceptor;
 mod windows_key_interceptor;
+mod mac_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
 use serde::{Deserialize, Serialize};
@@ -49,6 +53,9 @@ impl KeyInterceptorState {
 
         #[cfg(target_os = "linux")]
         let interceptor: Box<dyn KeyInterceptorTrait + Send> = Box::new(LinuxKeyInterceptor::new());
+
+        #[cfg(target_os = "macos")]
+        let interceptor: Box<dyn KeyInterceptorTrait + Send> = Box::new(MacKeyInterceptor::new());
 
         let interceptor_arc = Arc::new(Mutex::new(interceptor));
         {

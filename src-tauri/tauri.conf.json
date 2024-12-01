@@ -10,7 +10,8 @@
     "targets": [
       "deb",
       "msi",
-      "appimage"
+      "appimage",
+      "dmg"
     ],
     "windows": {
       "allowDowngrades": true,
