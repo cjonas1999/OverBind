@@ -3,7 +3,6 @@
 
 extern crate dirs;
 extern crate log;
-extern crate simplelog;
 
 #[cfg(target_os = "linux")]
 use linux_key_interceptor::LinuxKeyInterceptor;
@@ -12,7 +11,7 @@ use linux_key_interceptor::LinuxKeyInterceptor;
 use mac_key_interceptor::MacKeyInterceptor;
 
 use once_cell::sync::Lazy;
-use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
+use fern;
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
@@ -291,14 +290,30 @@ fn list_inputs() -> Result<Vec<String>, String> {
 fn main() {
     let log_file_path = dirs::data_dir().unwrap().join("OverBind").join("error.log");
     create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
-    let log_file = File::create(log_file_path).expect("Could not create log file");
-    CombinedLogger::init(vec![WriteLogger::new(
-        LevelFilter::Info,
-        Config::default(),
-        log_file,
-    )])
-    .expect("Could not initialize logger");
+    // let log_file = File::create(log_file_path).expect("Could not create log file");
+    let _ = fern::Dispatch::new()
+        .chain(
+            // file logger
+            fern::Dispatch::new()
+                .format(|out, message, record| {
+                out.finish(format_args!(
+                    "[{} {}] {}",
+                    record.level(),
+                    record.target(),
+                    message
+                ))
+            })
+            .level(log::LevelFilter::Info)
+            .chain(fern::log_file(log_file_path.clone()).unwrap())
+        )
+        .chain(// stdout log
+            fern::Dispatch::new()
+                .level(log::LevelFilter::Debug)
+                .chain(std::io::stdout())
+        )
+        .apply();
 
+    
     let _ = ensure_config_file_exists();
     let _ = ensure_settings_file_exists();
 

@@ -848,6 +848,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fern"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4316185f709b23713e41e3195f90edef7fb00c3ed4adc79769cf09cc762a3b29"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "field-offset"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2439,6 +2448,7 @@ dependencies = [
  "core-graphics",
  "dirs",
  "evdev",
+ "fern",
  "glib 0.20.4",
  "gtk",
  "input",

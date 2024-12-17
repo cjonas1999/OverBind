@@ -1,5 +1,6 @@
 #![cfg(target_os = "windows")]
 
+use log::{debug, error, info, trace, warn};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::cmp;
@@ -107,7 +108,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.target = Some(target);
         if !settings.allowed_programs.is_empty() {
-            println!("Allowed programs: {:?}", settings.allowed_programs);
+            info!("Allowed programs: {:?}", settings.allowed_programs);
             shared_state.allowed_programs = Some(settings.allowed_programs.clone());
         }
         shared_state.block_kb_on_controller = settings.block_kb_on_controller;
@@ -138,7 +139,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                     result_type: item.result_type.clone(),
                     result_value: item.result_value,
                 });
-                println!(
+                debug!(
                     "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
                     keycode, key_state.result_type, key_state.result_value
                 );
@@ -174,7 +175,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                         opposite_key_mapping: key_mapping,
                     });
 
-                println!(
+                debug!(
                     "Keycode: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
                     keycode,
                     opposite_key_state.opposite_key_value,
@@ -208,7 +209,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let handle = match handle_result {
                     Ok(handle) => handle,
                     Err(err) => {
-                        println!("Error opening process: {:?}", err);
+                        error!("Error opening process: {:?}", err);
                         return;
                     }
                 };
@@ -225,12 +226,12 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let process_name = full_process_name.split('\\').last().unwrap();
                 let _ = CloseHandle(handle);
 
-                println!("Active process: {:?}", process_name);
+                info!("Active process: {:?}", process_name);
 
                 let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
                 for program in allowed_programs.unwrap() {
                     if process_name.contains(&program) {
-                        println!("{:?} is allowed", process_name);
+                        info!("{:?} is allowed", process_name);
                         let hook = SetWindowsHookExW(
                             WH_KEYBOARD_LL,
                             Some(low_level_keyboard_proc_callback),
