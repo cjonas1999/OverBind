@@ -17,6 +17,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
+use chrono::Local;
 use serde_json::Value;
 use std::fs::{self, create_dir_all, File};
 use std::io::{BufReader, Write};
@@ -292,18 +293,17 @@ fn main() {
     create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
     // let log_file = File::create(log_file_path).expect("Could not create log file");
     let _ = fern::Dispatch::new()
-        .chain(
-            // file logger
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{} - {} - {}",
+                Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info)
+        .chain(// file logger
             fern::Dispatch::new()
-                .format(|out, message, record| {
-                out.finish(format_args!(
-                    "[{} {}] {}",
-                    record.level(),
-                    record.target(),
-                    message
-                ))
-            })
-            .level(log::LevelFilter::Info)
             .chain(fern::log_file(log_file_path.clone()).unwrap())
         )
         .chain(// stdout log
