@@ -11,13 +11,11 @@ use linux_key_interceptor::LinuxKeyInterceptor;
 use mac_key_interceptor::MacKeyInterceptor;
 
 use once_cell::sync::Lazy;
-use fern;
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
-use chrono::Local;
 use serde_json::Value;
 use std::fs::{self, create_dir_all, File};
 use std::io::{BufReader, Write};
@@ -289,31 +287,8 @@ fn list_inputs() -> Result<Vec<String>, String> {
 }
 
 fn main() {
-    let log_file_path = dirs::data_dir().unwrap().join("OverBind").join("error.log");
-    create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
-    // let log_file = File::create(log_file_path).expect("Could not create log file");
-    let _ = fern::Dispatch::new()
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{} - {} - {}",
-                Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                message
-            ))
-        })
-        .level(log::LevelFilter::Info)
-        .chain(// file logger
-            fern::Dispatch::new()
-            .chain(fern::log_file(log_file_path.clone()).unwrap())
-        )
-        .chain(// stdout log
-            fern::Dispatch::new()
-                .level(log::LevelFilter::Debug)
-                .chain(std::io::stdout())
-        )
-        .apply();
+    let log_file_path = dirs::data_dir().unwrap().join("OverBind");
 
-    
     let _ = ensure_config_file_exists();
     let _ = ensure_settings_file_exists();
 
@@ -329,6 +304,19 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_log::Builder::new()
+            .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::Stdout,
+            ))
+            .target(tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::Folder {
+                    path: log_file_path,
+                    file_name: None,
+                    },
+              ))
+              .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+              .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+            .build())
         .setup(|app| {
             let main_window = app.get_webview_window("main").unwrap();
             {

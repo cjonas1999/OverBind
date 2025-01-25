@@ -3,11 +3,20 @@ import { useEffect, useState } from "react";
 import KeybindSettings from "./components/Edit";
 import SettingsModal from "./components/SettingsModal";
 import { listen } from "@tauri-apps/api/event";
+import {
+  warn,
+  debug,
+  trace,
+  info,
+  error,
+  attachConsole,
+  attachLogger,
+} from '@tauri-apps/plugin-log';
 
 let init = false;
 
 type LogEntry = {
-  type: "log" | "error" | "warn"; // Add more types as needed
+  type: "log" | "error" | "warn" | "debug"; // Add more types as needed
   message: string;
   timestamp: number;
 };
@@ -78,6 +87,7 @@ function App() {
         ...prevLogs,
         { type: "log", message: args.join(" "), timestamp: Date.now() },
       ]);
+      info(args.toString());
       originalConsoleLog(...args);
     };
 
@@ -87,6 +97,7 @@ function App() {
         ...prevLogs,
         { type: "error", message: args.join(" "), timestamp: Date.now() },
       ]);
+      error(args.toString());
       originalConsoleError(...args);
     };
 
@@ -96,6 +107,7 @@ function App() {
         ...prevLogs,
         { type: "warn", message: args.join(" "), timestamp: Date.now() },
       ]);
+      warn(args.toString());
       originalConsoleWarn(...args);
     };
 

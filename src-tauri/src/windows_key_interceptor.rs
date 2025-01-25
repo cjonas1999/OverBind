@@ -226,12 +226,12 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let process_name = full_process_name.split('\\').last().unwrap();
                 let _ = CloseHandle(handle);
 
-                info!("Active process: {:?}", process_name);
+                debug!("Active process: {:?}", process_name);
 
                 let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
                 for program in allowed_programs.unwrap() {
                     if process_name.contains(&program) {
-                        info!("{:?} is allowed", process_name);
+                        info!("{:?} is allowed, activating hook", process_name);
                         let hook = SetWindowsHookExW(
                             WH_KEYBOARD_LL,
                             Some(low_level_keyboard_proc_callback),
@@ -248,6 +248,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             {
                 let mut shared_state = SHARED_STATE.write().unwrap();
                 if let Some(hook_handle) = shared_state.hook_handle.take() {
+                    info!("Deactivating hook");
                     unsafe {
                         let _ = UnhookWindowsHookEx(hook_handle);
                     }
@@ -323,6 +324,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
     fn stop(&self, _: &tauri::AppHandle) {
         let mut shared_state = SHARED_STATE.write().unwrap();
         if let Some(hook_handle) = shared_state.hook_handle.take() {
+            info!("Stopping hook");
             unsafe {
                 let _ = UnhookWindowsHookEx(hook_handle);
             }
