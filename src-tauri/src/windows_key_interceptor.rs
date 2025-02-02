@@ -1,6 +1,6 @@
 #![cfg(target_os = "windows")]
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::cmp;
@@ -93,7 +93,8 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         }
     }
 
-    fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
+        fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
+        println!("Initializing virtual controller");
         // Connect to the ViGEmBus driver
         let client = vigem_client::Client::connect().map_err(|e| e.to_string())?;
         // Create the virtual controller target
@@ -191,7 +192,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         unsafe extern "system" fn win_event_proc(
             _hwineventhook: HWINEVENTHOOK,
             _event: u32,
-            hwnd: HWND,
+            _hwnd: HWND,
             _idobject: i32,
             _idchild: i32,
             _ideventthread: u32,
@@ -291,6 +292,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
         let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
         if allowed_programs.is_some() {
+            info!("Starting window hook");
             let hook = unsafe {
                 SetWinEventHook(
                     EVENT_OBJECT_FOCUS,
@@ -305,6 +307,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             let mut shared_state = SHARED_STATE.write().unwrap();
             shared_state.window_hook_handle = Some(hook);
         } else {
+            info!("Starting key interception");
             let hook = unsafe {
                 SetWindowsHookExW(
                     WH_KEYBOARD_LL,

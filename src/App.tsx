@@ -9,17 +9,9 @@ import {
   trace,
   info,
   error,
-  attachConsole,
-  attachLogger,
 } from '@tauri-apps/plugin-log';
 
 let init = false;
-
-type LogEntry = {
-  type: "log" | "error" | "warn" | "debug"; // Add more types as needed
-  message: string;
-  timestamp: number;
-};
 
 function App() {
   const runOverbind = async () => {
@@ -72,49 +64,24 @@ function App() {
   const [err, setErr] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [isSettingsIncomplete, setIsSettingsIncomplete] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isLogVisible, setIsLogVisible] = useState(false);
-
-  const toggleLogs = () => {
-    console.log(`${!isLogVisible ? "Enabling" : "Disabling"} console logs`);
-    setIsLogVisible(!isLogVisible);
-  };
 
   useEffect(() => {
-    const originalConsoleLog = console.log;
-    console.log = (...args) => {
-      setLogs((prevLogs) => [
-        ...prevLogs,
-        { type: "log", message: args.join(" "), timestamp: Date.now() },
-      ]);
-      info(args.toString());
-      originalConsoleLog(...args);
-    };
-
-    const originalConsoleError = console.error;
-    console.error = (...args) => {
-      setLogs((prevLogs) => [
-        ...prevLogs,
-        { type: "error", message: args.join(" "), timestamp: Date.now() },
-      ]);
-      error(args.toString());
-      originalConsoleError(...args);
-    };
-
-    const originalConsoleWarn = console.warn;
-    console.warn = (...args) => {
-      setLogs((prevLogs) => [
-        ...prevLogs,
-        { type: "warn", message: args.join(" "), timestamp: Date.now() },
-      ]);
-      warn(args.toString());
-      originalConsoleWarn(...args);
-    };
-
-    return () => {
-      console.log = originalConsoleLog;
-      // Reset other console methods if overridden
-    };
+    function forwardConsole(
+      fnName: 'log' | 'debug' | 'info' | 'warn' | 'error',
+      logger: (message: string) => Promise<void>
+    ) {
+      const original = console[fnName];
+      console[fnName] = (message) => {
+        original(message);
+        logger(message);
+      };
+    }
+    
+    forwardConsole('log', trace);
+    forwardConsole('debug', debug);
+    forwardConsole('info', info);
+    forwardConsole('warn', warn);
+    forwardConsole('error', error);
   }, []);
 
   // update ui when tray menu is used
@@ -215,14 +182,6 @@ function App() {
           Edit
         </button>
         <button
-          className="rounded-md bg-slate-800 bg-opacity-90 px-5 py-2.5 text-base font-medium
-          text-white shadow outline-none transition-colors
-          hover:bg-slate-600 active:bg-slate-600"
-          onClick={toggleLogs}
-        >
-          Logs
-        </button>
-        <button
           className="rounded-md bg-stone-600 bg-opacity-90 px-5 py-2.5 text-base font-medium
           text-white shadow outline-none transition-colors
           hover:bg-stone-500 active:bg-stone-500"
@@ -271,29 +230,6 @@ function App() {
           onDirtySave={() => setIsDirty(true)}
           onErr={setErr}
         />
-      )}
-
-      {isLogVisible && (
-        <div className="scrollbar-hide scroll overflow mx-12 my-10 h-80 overflow-scroll bg-zinc-900 p-5 text-left font-mono">
-          {logs
-            .slice()
-            .reverse()
-            .map((log, i) => (
-              <div
-                key={i}
-                className={`mb-2 ${log.type === "log"
-                  ? "text-blue-500"
-                  : log.type === "warn"
-                    ? "text-yellow-500"
-                    : log.type === "error"
-                      ? "text-red-500"
-                      : "text-white"
-                  }`}
-              >
-                {log.timestamp}. {log.message}
-              </div>
-            ))}
-        </div>
       )}
     </div>
   );
