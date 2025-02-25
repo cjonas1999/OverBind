@@ -93,7 +93,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         }
     }
 
-        fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
+    fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
         println!("Initializing virtual controller");
         // Connect to the ViGEmBus driver
         let client = vigem_client::Client::connect().map_err(|e| e.to_string())?;
