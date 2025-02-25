@@ -232,16 +232,18 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
                 for program in allowed_programs.unwrap() {
                     if process_name.contains(&program) {
-                        info!("{:?} is allowed, activating hook", process_name);
-                        let hook = SetWindowsHookExW(
-                            WH_KEYBOARD_LL,
-                            Some(low_level_keyboard_proc_callback),
-                            HINSTANCE::default(),
-                            0,
-                        )
-                        .map_err(|e| e.to_string());
-                        let mut shared_state = SHARED_STATE.write().unwrap();
-                        shared_state.hook_handle = Some(hook.unwrap());
+                        if SHARED_STATE.read().unwrap().hook_handle == None {
+                            info!("{:?} is allowed, activating hook", process_name);
+                            let hook = SetWindowsHookExW(
+                                WH_KEYBOARD_LL,
+                                Some(low_level_keyboard_proc_callback),
+                                HINSTANCE::default(),
+                                0,
+                            )
+                            .map_err(|e| e.to_string());
+                            let mut shared_state = SHARED_STATE.write().unwrap();
+                            shared_state.hook_handle = Some(hook.unwrap());
+                        }
                         return;
                     }
                 }
@@ -253,6 +255,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                     unsafe {
                         let _ = UnhookWindowsHookEx(hook_handle);
                     }
+                    shared_state.hook_handle = None;
 
                     {
                         let mut key_states = KEY_STATES.write().unwrap();
@@ -331,11 +334,14 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             unsafe {
                 let _ = UnhookWindowsHookEx(hook_handle);
             }
+            shared_state.hook_handle = None;
         }
         if let Some(window_hook_handle) = shared_state.window_hook_handle.take() {
+            info!("Stopping window hook");
             unsafe {
                 let _ = UnhookWinEvent(window_hook_handle);
             }
+            shared_state.window_hook_handle = None;
         }
     }
 
