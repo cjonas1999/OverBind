@@ -2549,7 +2549,7 @@ dependencies = [
 
 [[package]]
 name = "overbind"
-version = "1.5.0"
+version = "1.5.1"
 dependencies = [
  "cairo-rs 0.19.4",
  "chrono",
