@@ -3,7 +3,6 @@
 
 extern crate dirs;
 extern crate log;
-extern crate simplelog;
 
 #[cfg(target_os = "linux")]
 use linux_key_interceptor::LinuxKeyInterceptor;
@@ -12,16 +11,17 @@ use linux_key_interceptor::LinuxKeyInterceptor;
 use mac_key_interceptor::MacKeyInterceptor;
 
 use once_cell::sync::Lazy;
-use simplelog::{CombinedLogger, Config, LevelFilter, WriteLogger};
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
+
+use log::info;
 use serde_json::Value;
-use std::fs::{self, create_dir_all, File};
+use std::fs::{self, File};
 use std::io::{BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::{env, panic};
 mod key_interceptor;
@@ -289,15 +289,27 @@ fn list_inputs() -> Result<Vec<String>, String> {
 }
 
 fn main() {
-    let log_file_path = dirs::data_dir().unwrap().join("OverBind").join("error.log");
-    create_dir_all(log_file_path.parent().unwrap()).expect("Could not create log file");
-    let log_file = File::create(log_file_path).expect("Could not create log file");
-    CombinedLogger::init(vec![WriteLogger::new(
-        LevelFilter::Info,
-        Config::default(),
-        log_file,
-    )])
-    .expect("Could not initialize logger");
+    let log_file_path = dirs::data_dir().unwrap().join("OverBind");
+    
+    let mut builder = tauri::Builder::default();
+
+    info!("Overbind starting up");
+
+    builder = builder.plugin(tauri_plugin_log::Builder::new()
+        .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::Folder {
+                path: log_file_path,
+                file_name: None,
+            },
+        ))
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+        .build());
+
+    builder = builder.plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_shell::init());
 
     let _ = ensure_config_file_exists();
     let _ = ensure_settings_file_exists();
@@ -305,18 +317,16 @@ fn main() {
     let settings_json = read_settings().unwrap();
     let settings: Settings = serde_json::from_value(settings_json).unwrap();
 
+    info!("Settings files found");
+
     let interceptor_state = KeyInterceptorState::new(settings.clone());
     let settings_arc = Arc::new(Mutex::new(settings));
     let settings_state = AppSettingsState(settings_arc.clone());
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            let main_window = app.get_webview_window("main").unwrap();
-            {
+
+    builder = builder.setup(|app| {
+        let main_window = app.get_webview_window("main").unwrap();
+        {
                 let mut window_lock = WINDOW.lock().unwrap();
                 *window_lock = Some(main_window.clone());
             }
@@ -414,37 +424,43 @@ fn main() {
 
             Ok(())
         })
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .manage(interceptor_state)
-        .manage(settings_state)
-        .invoke_handler(tauri::generate_handler![
-            read_config,
-            save_config,
-            read_app_settings,
-            save_app_settings,
-            start_interception,
-            stop_interception,
-            is_interceptor_running,
-            list_inputs,
-        ])
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                if window.label() == "main" {
-                    let app = window.app_handle();
-                    let app_state = app.state::<AppSettingsState>();
-                    let settings = app_state.0.lock().unwrap();
+    .plugin(tauri_plugin_window_state::Builder::default().build());
 
-                    if settings.close_to_tray == true {
-                        window.hide().unwrap();
-                        api.prevent_close();
-                    }
+
+    builder = builder.manage(interceptor_state)
+    .manage(settings_state)
+    .invoke_handler(tauri::generate_handler![
+        read_config,
+        save_config,
+        read_app_settings,
+        save_app_settings,
+        start_interception,
+        stop_interception,
+        is_interceptor_running,
+        list_inputs,
+    ]);
+
+
+    builder = builder.on_window_event(|window, event| match event {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            if window.label() == "main" {
+                let app = window.app_handle();
+                let app_state = app.state::<AppSettingsState>();
+                let settings = app_state.0.lock().unwrap();
+
+                if settings.close_to_tray == true {
+                    window.hide().unwrap();
+                    api.prevent_close();
                 }
             }
-            _ => {}
-        })
-        .build(tauri::generate_context!())
-        .expect("error while building OvrBind")
-        .run(|_app_handle, _event| {
-            // Here you can handle specific events if needed
-        });
+        }
+        _ => {}
+    });
+
+
+    builder.build(tauri::generate_context!())
+    .expect("error while building OvrBind")
+    .run(|_app_handle, _event| {
+        // Here you can handle specific events if needed
+    });
 }

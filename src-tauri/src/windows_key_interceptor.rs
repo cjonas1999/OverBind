@@ -1,5 +1,6 @@
 #![cfg(target_os = "windows")]
 
+use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::cmp;
@@ -93,6 +94,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
     }
 
     fn initialize(&mut self, settings: &Settings) -> Result<(), String> {
+        println!("Initializing virtual controller");
         // Connect to the ViGEmBus driver
         let client = vigem_client::Client::connect().map_err(|e| e.to_string())?;
         // Create the virtual controller target
@@ -107,7 +109,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.target = Some(target);
         if !settings.allowed_programs.is_empty() {
-            println!("Allowed programs: {:?}", settings.allowed_programs);
+            info!("Allowed programs: {:?}", settings.allowed_programs);
             shared_state.allowed_programs = Some(settings.allowed_programs.clone());
         }
         shared_state.block_kb_on_controller = settings.block_kb_on_controller;
@@ -138,7 +140,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                     result_type: item.result_type.clone(),
                     result_value: item.result_value,
                 });
-                println!(
+                debug!(
                     "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
                     keycode, key_state.result_type, key_state.result_value
                 );
@@ -174,7 +176,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                         opposite_key_mapping: key_mapping,
                     });
 
-                println!(
+                debug!(
                     "Keycode: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
                     keycode,
                     opposite_key_state.opposite_key_value,
@@ -190,7 +192,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         unsafe extern "system" fn win_event_proc(
             _hwineventhook: HWINEVENTHOOK,
             _event: u32,
-            hwnd: HWND,
+            _hwnd: HWND,
             _idobject: i32,
             _idchild: i32,
             _ideventthread: u32,
@@ -208,7 +210,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let handle = match handle_result {
                     Ok(handle) => handle,
                     Err(err) => {
-                        println!("Error opening process: {:?}", err);
+                        error!("Error opening process: {:?}", err);
                         return;
                     }
                 };
@@ -225,21 +227,23 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                 let process_name = full_process_name.split('\\').last().unwrap();
                 let _ = CloseHandle(handle);
 
-                println!("Active process: {:?}", process_name);
+                debug!("Active process: {:?}", process_name);
 
                 let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
                 for program in allowed_programs.unwrap() {
                     if process_name.contains(&program) {
-                        println!("{:?} is allowed", process_name);
-                        let hook = SetWindowsHookExW(
-                            WH_KEYBOARD_LL,
-                            Some(low_level_keyboard_proc_callback),
-                            HINSTANCE::default(),
-                            0,
-                        )
-                        .map_err(|e| e.to_string());
-                        let mut shared_state = SHARED_STATE.write().unwrap();
-                        shared_state.hook_handle = Some(hook.unwrap());
+                        if SHARED_STATE.read().unwrap().hook_handle == None {
+                            info!("{:?} is allowed, activating hook", process_name);
+                            let hook = SetWindowsHookExW(
+                                WH_KEYBOARD_LL,
+                                Some(low_level_keyboard_proc_callback),
+                                HINSTANCE::default(),
+                                0,
+                            )
+                            .map_err(|e| e.to_string());
+                            let mut shared_state = SHARED_STATE.write().unwrap();
+                            shared_state.hook_handle = Some(hook.unwrap());
+                        }
                         return;
                     }
                 }
@@ -247,9 +251,11 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             {
                 let mut shared_state = SHARED_STATE.write().unwrap();
                 if let Some(hook_handle) = shared_state.hook_handle.take() {
+                    info!("Deactivating hook");
                     unsafe {
                         let _ = UnhookWindowsHookEx(hook_handle);
                     }
+                    shared_state.hook_handle = None;
 
                     {
                         let mut key_states = KEY_STATES.write().unwrap();
@@ -289,6 +295,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
         let allowed_programs = SHARED_STATE.read().unwrap().allowed_programs.clone();
         if allowed_programs.is_some() {
+            info!("Starting window hook");
             let hook = unsafe {
                 SetWinEventHook(
                     EVENT_OBJECT_FOCUS,
@@ -303,6 +310,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             let mut shared_state = SHARED_STATE.write().unwrap();
             shared_state.window_hook_handle = Some(hook);
         } else {
+            info!("Starting key interception");
             let hook = unsafe {
                 SetWindowsHookExW(
                     WH_KEYBOARD_LL,
@@ -322,14 +330,18 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
     fn stop(&self, _: &tauri::AppHandle) {
         let mut shared_state = SHARED_STATE.write().unwrap();
         if let Some(hook_handle) = shared_state.hook_handle.take() {
+            info!("Stopping hook");
             unsafe {
                 let _ = UnhookWindowsHookEx(hook_handle);
             }
+            shared_state.hook_handle = None;
         }
         if let Some(window_hook_handle) = shared_state.window_hook_handle.take() {
+            info!("Stopping window hook");
             unsafe {
                 let _ = UnhookWinEvent(window_hook_handle);
             }
+            shared_state.window_hook_handle = None;
         }
     }
 

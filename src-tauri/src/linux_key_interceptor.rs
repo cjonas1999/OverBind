@@ -1,5 +1,6 @@
 #![cfg(target_os = "linux")]
 
+use log::{debug, error, info, trace, warn};
 use evdev::{Device, InputEventKind, Key};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
@@ -239,7 +240,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         shared_state.uinput_controller = Some(controller);
         shared_state.uinput_keyboard = Some(keyboard);
         if !settings.allowed_programs.is_empty() {
-            println!("Allowed programs: {:?}", settings.allowed_programs);
+            info!("Allowed programs: {:?}", settings.allowed_programs);
             shared_state.allowed_programs = Some(settings.allowed_programs.clone());
         }
 
@@ -251,7 +252,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
             if symlink_path.exists() {
                 if let Ok(input_path) = fs::read_link(symlink_path) {
                     if let Some(input_device) = input_path.file_name() {
-                        println!("Found input device: {:?}", input_device);
+                        info!("Found input device: {:?}", input_device);
                         device_name = format!("/dev/input/{}", input_device.to_str().unwrap());
                     }
                 }
@@ -261,7 +262,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                 if backup_path.exists() {
                     if let Ok(input_path) = fs::read_link(backup_path) {
                         if let Some(input_device) = input_path.file_name() {
-                            println!("Found input device: {:?}", input_device);
+                            info!("Found input device: {:?}", input_device);
                             device_name = format!("/dev/input/{}", input_device.to_str().unwrap());
                         }
                     }
@@ -329,7 +330,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                             result_type: item.result_type.clone(),
                             result_value: opposite_dpad as i32,
                         });
-                    println!(
+                    debug!(
                         "DPad button code: {:?}, Opposite dpad button code: {:?}",
                         item.result_value, opposite_dpad
                     )
@@ -340,7 +341,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                     result_type: item.result_type.clone(),
                     result_value: result_value,
                 });
-                println!(
+                debug!(
                     "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
                     keycode, key_state.result_type, key_state.result_value
                 );
@@ -393,7 +394,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                         opposite_key_mapping,
                     });
 
-                println!(
+                    debug!(
                     "Keycode: {:?}, KeycodeMapping: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
                     keycode,
                     opposite_key_mappings.get(&keycode).unwrap(),
@@ -431,7 +432,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                         {
                             let mut shared_state = SHARED_STATE.write().unwrap();
                             shared_state.active_app_name = Some(window_name);
-                            println!("Active app name: {:?}", shared_state.active_app_name);
+                            info!("Active app name: {:?}", shared_state.active_app_name);
 
                             if shared_state.is_cursor_overlay_enabled {
                                 match UnixStream::connect("/tmp/cursor_overlay.sock") {
@@ -446,10 +447,10 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                                     &shared_state.active_app_name.as_ref().unwrap(),
                                                 ))
                                         {
-                                            print!("Showing cursor");
+                                            debug!("Showing cursor");
                                             command = Some("show");
                                         } else {
-                                            println!("Hiding cursor");
+                                            debug!("Hiding cursor");
                                             command = Some("hide");
                                         }
 
@@ -458,7 +459,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                             .expect("Failed to send command");
                                     }
                                     Err(e) => {
-                                        println!("Failed to connect to cursor overlay. You may have to delete the socket file at /tmp/cursor_overlay.sock and restart OverBind. Error: {}", e);
+                                        debug!("Failed to connect to cursor overlay. You may have to delete the socket file at /tmp/cursor_overlay.sock and restart OverBind. Error: {}", e);
                                     }
                                 }
                             }
@@ -470,7 +471,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         });
 
         // Start listening for key events
-        println!("Spawning key event listener thread");
+        info!("Spawning key event listener thread");
         thread::spawn(move || {
             let mut allowed_programs = Option::None;
             let mut device_path = String::from("/dev/input/event0"); // Default in case we didn't find the device
@@ -484,7 +485,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                 }
             }
             let mut device = Device::open(&device_path).unwrap();
-            println!("Opened device: {:?}", device_path);
+            info!("Opened device: {:?}", device_path);
 
             device.grab().unwrap();
 
@@ -512,7 +513,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                     sync_keyboard();
                                 }
                                 let handle_duration = handle_start.elapsed();
-                                println!(
+                                debug!(
                                     "Handle duration in us: {:?}",
                                     handle_duration.as_micros()
                                 );
@@ -533,7 +534,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                 }
             }
 
-            println!("Ungrabbing device");
+            info!("Ungrabbing device");
             device.ungrab().unwrap();
         });
 
@@ -542,7 +543,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
             let mut shared_state = SHARED_STATE.write().unwrap();
             if shared_state.is_cursor_overlay_enabled {
                 let child: Box<dyn Killable> = if tauri::is_dev() {
-                    println!("Starting cursor overlay in dev");
+                    debug!("Starting cursor overlay in dev");
                     Box::new(
                         Command::new("cargo")
                             .arg("run")
@@ -552,7 +553,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                             .expect("Failed to start cursor overlay"),
                     )
                 } else {
-                    println!("Starting cursor overlay in prod");
+                    debug!("Starting cursor overlay in prod");
                     let sidecar_command = app.shell().sidecar("cursor-overlay").unwrap();
                     let (mut rx, child) = sidecar_command
                         .spawn()
@@ -563,25 +564,25 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                         while let Some(event) = rx.recv().await {
                             match event {
                                 CommandEvent::Stdout(data) => {
-                                    println!(
+                                    debug!(
                                         "cursor-overlay stdout: {}",
                                         String::from_utf8(data).unwrap_or("Unknown".to_string())
                                     );
                                 }
                                 CommandEvent::Stderr(data) => {
-                                    println!(
+                                    error!(
                                         "cursor-overlay stderr: {}",
                                         String::from_utf8(data).unwrap_or("Unknown".to_string())
                                     );
                                 }
                                 CommandEvent::Terminated(code) => {
-                                    println!(
+                                    error!(
                                         "cursor-overlay exited with code: {}",
                                         code.code.unwrap_or(1337).to_string()
                                     );
                                 }
                                 CommandEvent::Error(data) => {
-                                    println!("cursor-overlay error: {}", data)
+                                    error!("cursor-overlay error: {}", data)
                                 }
                                 _ => {}
                             }
@@ -623,7 +624,7 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
             _ => (),
         }
     }
-    println!("Keycode: {:?}, Key is down: {:?}", key_code, key_is_down);
+    debug!("Keycode: {:?}, Key is down: {:?}", key_code, key_is_down);
 
     // SOCD
     {
@@ -680,26 +681,26 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                         ));
 
                     if key_is_down {
-                        println!(
+                        debug!(
                             "Sending hat event (dpad down): {:?}, {:?}",
                             event_key, event_value
                         );
                         send_hat_event(event_key, event_value, true);
                     } else {
                         let dpad_states = DPAD_BUTTON_STATES.read().unwrap();
-                        println!(
+                        debug!(
                             "Searching opposite dpad state for {:?}",
                             key_state.result_value
                         );
                         // Print all dpad states
                         for (key, value) in dpad_states.iter() {
-                            println!("Key: {:?}, Value: {:?}", key, value.result_value);
+                            debug!("Key: {:?}, Value: {:?}", key, value.result_value);
                         }
                         if let Some(opposite_dpad_state) =
                             dpad_states.get(&(key_state.result_value as u32))
                         {
                             if opposite_dpad_state.is_pressed {
-                                println!(
+                                debug!(
                                     "Sending hat even (opposite dpad down): {:?}, {:?}",
                                     event_key,
                                     dpad_button_to_abs_value(
@@ -722,14 +723,14 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                                     true,
                                 );
                             } else {
-                                println!(
+                                debug!(
                                     "Sending hat event (opposite of {:?} not pressed): {:?}, {:?}",
                                     key_state.result_value, event_key, event_value
                                 );
                                 send_hat_event(event_key, event_value, false);
                             }
                         } else {
-                            println!(
+                            debug!(
                                 "Sending hat event (opposite of {:?} not found): {:?}, {:?}",
                                 key_state.result_value, event_key, event_value
                             );
@@ -743,7 +744,7 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                         .find(|(_, state)| state.result_value == key_state.result_value)
                     {
                         dpad_state.1.is_pressed = key_is_down;
-                        println!(
+                        debug!(
                             "Setting dpad state for {:?} to {:?}",
                             key_state.result_value, key_is_down
                         );

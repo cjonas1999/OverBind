@@ -6,6 +6,7 @@
     "linux"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "log:default"
   ]
 }
