@@ -16,18 +16,17 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
-
 use log::info;
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::{env, panic};
 mod key_interceptor;
 mod linux_key_interceptor;
-mod windows_key_interceptor;
 mod mac_key_interceptor;
+mod windows_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
 use serde::{Deserialize, Serialize};
@@ -290,23 +289,26 @@ fn list_inputs() -> Result<Vec<String>, String> {
 
 fn main() {
     let log_file_path = dirs::data_dir().unwrap().join("OverBind");
-    
+
     let mut builder = tauri::Builder::default();
 
     info!("Overbind starting up");
 
-    builder = builder.plugin(tauri_plugin_log::Builder::new()
-        .target(tauri_plugin_log::Target::new(
-            tauri_plugin_log::TargetKind::Folder {
-                path: log_file_path,
-                file_name: None,
-            },
-        ))
-        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
-        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-        .build());
+    builder = builder.plugin(
+        tauri_plugin_log::Builder::new()
+            .target(tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::Folder {
+                    path: log_file_path,
+                    file_name: None,
+                },
+            ))
+            .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+            .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+            .build(),
+    );
 
-    builder = builder.plugin(tauri_plugin_updater::Builder::new().build())
+    builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_shell::init());
@@ -323,10 +325,10 @@ fn main() {
     let settings_arc = Arc::new(Mutex::new(settings));
     let settings_state = AppSettingsState(settings_arc.clone());
 
-
-    builder = builder.setup(|app| {
-        let main_window = app.get_webview_window("main").unwrap();
-        {
+    builder = builder
+        .setup(|app| {
+            let main_window = app.get_webview_window("main").unwrap();
+            {
                 let mut window_lock = WINDOW.lock().unwrap();
                 *window_lock = Some(main_window.clone());
             }
@@ -424,22 +426,21 @@ fn main() {
 
             Ok(())
         })
-    .plugin(tauri_plugin_window_state::Builder::default().build());
+        .plugin(tauri_plugin_window_state::Builder::default().build());
 
-
-    builder = builder.manage(interceptor_state)
-    .manage(settings_state)
-    .invoke_handler(tauri::generate_handler![
-        read_config,
-        save_config,
-        read_app_settings,
-        save_app_settings,
-        start_interception,
-        stop_interception,
-        is_interceptor_running,
-        list_inputs,
-    ]);
-
+    builder = builder
+        .manage(interceptor_state)
+        .manage(settings_state)
+        .invoke_handler(tauri::generate_handler![
+            read_config,
+            save_config,
+            read_app_settings,
+            save_app_settings,
+            start_interception,
+            stop_interception,
+            is_interceptor_running,
+            list_inputs,
+        ]);
 
     builder = builder.on_window_event(|window, event| match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
@@ -457,10 +458,10 @@ fn main() {
         _ => {}
     });
 
-
-    builder.build(tauri::generate_context!())
-    .expect("error while building OvrBind")
-    .run(|_app_handle, _event| {
-        // Here you can handle specific events if needed
-    });
+    builder
+        .build(tauri::generate_context!())
+        .expect("error while building OvrBind")
+        .run(|_app_handle, _event| {
+            // Here you can handle specific events if needed
+        });
 }

@@ -73,10 +73,10 @@ function App() {
       const original = console[fnName];
       console[fnName] = (message) => {
         original(message);
-        logger(message);
+        logger(message ?? '');
       };
     }
-    
+
     forwardConsole('log', trace);
     forwardConsole('debug', debug);
     forwardConsole('info', info);
