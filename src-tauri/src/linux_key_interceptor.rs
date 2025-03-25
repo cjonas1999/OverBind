@@ -1,7 +1,7 @@
 #![cfg(target_os = "linux")]
 
-use log::{debug, error, info, trace, warn};
 use evdev::{Device, InputEventKind, Key};
+use log::{debug, error, info, trace, warn};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -394,7 +394,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                         opposite_key_mapping,
                     });
 
-                    debug!(
+                debug!(
                     "Keycode: {:?}, KeycodeMapping: {:?}, OppositeKeycode: {:?}, OppositeKeyMapping: {:?}",
                     keycode,
                     opposite_key_mappings.get(&keycode).unwrap(),
@@ -513,10 +513,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                     sync_keyboard();
                                 }
                                 let handle_duration = handle_start.elapsed();
-                                debug!(
-                                    "Handle duration in us: {:?}",
-                                    handle_duration.as_micros()
-                                );
+                                debug!("Handle duration in us: {:?}", handle_duration.as_micros());
                             } else {
                                 // Because fetch_events is blocking when overbind is stopped we still will process one more event
                                 // Send it and immediately release it to resent the virtual keyboard back to normal
@@ -643,8 +640,12 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
             }
 
             let opposite_key_value = cloned_key_state.opposite_key_value;
-            let opposite_key_mapping = cloned_key_state.opposite_key_mapping.unwrap_or_default();
-            let mapping_opposite_key_state = opposite_key_states.get_mut(&opposite_key_mapping);
+            let mapping_opposite_key_state =
+                cloned_key_state
+                    .opposite_key_mapping
+                    .and_then(|opposite_key_mapping| {
+                        opposite_key_states.get_mut(&opposite_key_mapping)
+                    });
             let opposite_key_state = match mapping_opposite_key_state {
                 Some(value) => value,
                 None => opposite_key_states.get_mut(&opposite_key_value).unwrap(),
