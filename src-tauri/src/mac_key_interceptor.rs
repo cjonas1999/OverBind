@@ -449,8 +449,12 @@ fn handle_key_event(
             }
 
             let opposite_key_value = cloned_key_state.opposite_key_value;
-            let opposite_key_mapping = cloned_key_state.opposite_key_mapping.unwrap_or_default();
-            let mapping_opposite_key_state = opposite_key_states.get_mut(&opposite_key_mapping);
+            let mapping_opposite_key_state =
+                cloned_key_state
+                    .opposite_key_mapping
+                    .and_then(|opposite_key_mapping| {
+                        opposite_key_states.get_mut(&opposite_key_mapping)
+                    });
             let opposite_key_state = match mapping_opposite_key_state {
                 Some(value) => value,
                 None => opposite_key_states.get_mut(&opposite_key_value).unwrap(),
