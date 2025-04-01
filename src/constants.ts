@@ -95,17 +95,17 @@ export const WINDOWS_ECMA_KEYMAP: Record<string, number> = {
 
   'NumLock': 0x90,
   'ScrollLock': 0x91,
-  'Semicolon': 0xBA,
-  'Equal': 0xBB,
-  'Comma': 0xBC,
-  'Minus': 0xBD,
-  'Period': 0xBE,
-  'Slash': 0xBF,
-  'Backquote': 0xC0,
-  'BracketLeft': 0xDB,
-  'Backslash': 0xDC,
-  'BracketRight': 0xDD,
-  'Quote': 0xDE,
+  ';': 0xBA,
+  '=': 0xBB,
+  ',': 0xBC,
+  '-': 0xBD,
+  '.': 0xBE,
+  '/': 0xBF,
+  '`': 0xC0,
+  '[': 0xDB,
+  '\\': 0xDC,
+  ']': 0xDD,
+  "'": 0xDE,
   // Add more mappings as needed
 }
 

@@ -147,7 +147,7 @@ function KeybindSettings({
       console.log("Keydown event", event);
        // KeyboardEvent.key is based upon the character
       let name = event.key;
-      console.log(`Detected key "${name}"`);
+      console.log(`Detected key "${name}" "${event.code}"`);
       let winKeyCode = WINDOWS_ECMA_KEYMAP[name];
       if (!winKeyCode) {
          // KeyboardEvent.code is based upon position on the keyboard, needed as fallback for numeric and modifier keys
