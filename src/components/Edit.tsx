@@ -145,11 +145,13 @@ function KeybindSettings({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       console.log("Keydown event", event);
-      let name = event.code;
-      console.log(`Detected key ${name}`);
+       // KeyboardEvent.key is based upon the character
+      let name = event.key;
+      console.log(`Detected key "${name}"`);
       let winKeyCode = WINDOWS_ECMA_KEYMAP[name];
       if (!winKeyCode) {
-        name = event.key;
+         // KeyboardEvent.code is based upon position on the keyboard, needed as fallback for numeric and modifier keys
+        name = event.code;
         winKeyCode = WINDOWS_ECMA_KEYMAP[name];
       }
       if (winKeyCode) {
