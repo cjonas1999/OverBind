@@ -221,6 +221,10 @@ function KeybindSettings({
     }
   };
 
+  const capitalizeFirstLetter = (val: string) => {
+    return String(val).charAt(0).toUpperCase() + String(val).slice(1);
+  }
+
   return (
     <div className="p-4 text-white">
       <h1 className="mb-4 text-lg font-bold">Edit Keybinds</h1>
@@ -277,7 +281,7 @@ function KeybindSettings({
                       setBinds(newKeybinds);
                     }}
                   >
-                    {bind.output}
+                    {capitalizeFirstLetter(bind.output)}
                   </Dropdown>
                 ) : (
                   <Dropdown
@@ -315,7 +319,7 @@ function KeybindSettings({
                         : { open: false, x: -500, y: 0 }
                     }
                   >
-                    {bind.output}
+                    {capitalizeFirstLetter(bind.output)}
                   </Dropdown>
                 )}
               </td>
@@ -357,7 +361,7 @@ function KeybindSettings({
                       : { open: false, x: -500, y: 0 }
                   }
                 >
-                  {bind.input}
+                  {capitalizeFirstLetter(bind.input)}
                 </Dropdown>
               </td>
               <td className="flex justify-center gap-2.5 px-0 py-2">
