@@ -22,10 +22,12 @@ use std::fs::{self, File};
 use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::{env, panic};
+use std::{env, panic, thread};
 mod key_interceptor;
 mod linux_key_interceptor;
+mod livesplit_core;
 mod mac_key_interceptor;
+mod text_masher;
 mod windows_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
@@ -293,6 +295,10 @@ fn main() {
     let mut builder = tauri::Builder::default();
 
     info!("Overbind starting up");
+
+    thread::spawn(|| {
+        text_masher::text_masher();
+    });
 
     builder = builder.plugin(
         tauri_plugin_log::Builder::new()

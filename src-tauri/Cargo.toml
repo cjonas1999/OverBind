@@ -28,6 +28,14 @@ tauri-plugin-fs = "2.2.0"
 dirs = "5.0.1"
 chrono = "0.4.39"
 tauri-plugin-log = "2.2.0"
+asr = { git = "https://github.com/AlexKnauth/asr", branch = "mono-5-split-index", features = [
+    "alloc", # Working with allocations.
+    "derive", # Defining your own settings structs, converting endianness, and binding to .NET classes.
+    "integer-vars", # Setting integer variables.
+    "unity", # Accessing games using the Unity engine.
+] }
+libc = "0.2.171"
+lazy_static = "1.5.0"
 
 [[bin]]
 name = "overbind"

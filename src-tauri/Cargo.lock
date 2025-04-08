@@ -106,6 +106,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "asr"
+version = "0.1.0"
+source = "git+https://github.com/AlexKnauth/asr?branch=mono-5-split-index#9481ef7dc2086b80f166387298126e0d9551fa2c"
+dependencies = [
+ "arrayvec",
+ "asr-derive",
+ "bytemuck",
+ "itoa 1.0.11",
+ "memchr",
+ "time",
+ "wasi 0.11.0+wasi-snapshot-preview1",
+]
+
+[[package]]
+name = "asr-derive"
+version = "0.1.0"
+source = "git+https://github.com/AlexKnauth/asr?branch=mono-5-split-index#9481ef7dc2086b80f166387298126e0d9551fa2c"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
+
+[[package]]
 name = "atk"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -309,6 +334,20 @@ name = "bytemuck"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94bbb0ad554ad961ddc5da507a12a29b14e4ae5bda06b19f575a3e6079d2e2ae"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ecc273b49b3205b83d648f0690daa588925572cc5063745bfe547fe7ec8e1a1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.96",
+]
 
 [[package]]
 name = "byteorder"
@@ -2091,9 +2130,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.159"
+version = "0.2.171"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "561d97a539a36e26a9a5fad1ea11a3039a67714694aaa379433e580854bc3dc5"
+checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
 
 [[package]]
 name = "libloading"
@@ -2676,6 +2715,7 @@ dependencies = [
 name = "overbind"
 version = "1.5.1"
 dependencies = [
+ "asr",
  "cairo-rs 0.19.4",
  "chrono",
  "core-foundation",
@@ -2687,6 +2727,8 @@ dependencies = [
  "gtk",
  "input",
  "io-kit-sys",
+ "lazy_static",
+ "libc",
  "log",
  "once_cell",
  "serde",
