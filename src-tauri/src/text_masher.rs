@@ -34,6 +34,8 @@ fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
                 needed_retry = true;
                 println!("GameManagerFinder wait_attach: retry...");
             }
+        } else {
+            println!("GameManagerFinder failed to attach");
         }
     }
 }
