@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 use libc::{c_char, c_int, c_uint, c_ulong};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     Module32FirstW, Module32NextW, Process32FirstW, Process32NextW, MODULEENTRY32W,
-    PROCESSENTRY32W, TH32CS_SNAPMODULE,
+    PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::{
@@ -106,6 +106,7 @@ pub unsafe extern "C" fn process_get_module_address(
             return 0;
         }
     };
+    println!("Attempting to get get address for module {:?}", module_name);
 
     let mut processes = PROCESS_LIST.lock().unwrap();
     let pid = process as i32;
@@ -275,10 +276,10 @@ pub unsafe extern "C" fn process_read(
             if success.is_ok() {
                 1
             } else {
-                eprintln!(
-                    "Failed to read memory from process {} at address {:#x}",
-                    proc.pid, address
-                );
+                // eprintln!(
+                //     "Failed to read memory from process {} at address {:#x}",
+                //     proc.pid, address
+                // );
                 0
             }
         }
@@ -417,8 +418,10 @@ impl Process {
     }
 
     fn get_module_address(&self, module_name: &str) -> Option<c_ulong> {
-        let snapshot =
-            unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, self.pid as u32).ok()? };
+        let snapshot = unsafe {
+            CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, self.pid as u32)
+                .ok()?
+        };
 
         let mut module_entry = MODULEENTRY32W::default();
         module_entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
@@ -433,7 +436,12 @@ impl Process {
                         .unwrap_or(name_u16.len());
                     let name = String::from_utf16_lossy(&name_u16[..null_pos]);
 
-                    if name.eq_ignore_ascii_case(module_name) {
+                    // Loose match: substring ignore-case
+                    if name
+                        .to_ascii_lowercase()
+                        .contains(&module_name.to_ascii_lowercase())
+                    {
+                        println!("Matched module: {}", name);
                         return Some(module_entry.modBaseAddr as usize as c_ulong);
                     }
 
@@ -444,12 +452,15 @@ impl Process {
             }
         }
 
+        println!("Module not found: {}", module_name);
         None
     }
 
     fn get_module_size(&self, module_name: &str) -> Option<c_ulong> {
-        let snapshot =
-            unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, self.pid as u32).ok()? };
+        let snapshot = unsafe {
+            CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, self.pid as u32)
+                .ok()?
+        };
 
         let mut module_entry = MODULEENTRY32W::default();
         module_entry.dwSize = std::mem::size_of::<MODULEENTRY32W>() as u32;
@@ -464,7 +475,14 @@ impl Process {
                         .unwrap_or(name_u16.len());
                     let name = String::from_utf16_lossy(&name_u16[..null_pos]);
 
-                    if name.eq_ignore_ascii_case(module_name) {
+                    println!("Checking module size for: {}", name);
+
+                    // Loose substring match
+                    if name
+                        .to_ascii_lowercase()
+                        .contains(&module_name.to_ascii_lowercase())
+                    {
+                        println!("Matched module for size: {}", name);
                         return Some(module_entry.modBaseSize as c_ulong);
                     }
 
@@ -475,6 +493,7 @@ impl Process {
             }
         }
 
+        println!("Module size not found: {}", module_name);
         None
     }
 }
