@@ -106,7 +106,6 @@ pub unsafe extern "C" fn process_get_module_address(
             return 0;
         }
     };
-    println!("Attempting to get get address for module {:?}", module_name);
 
     let mut processes = PROCESS_LIST.lock().unwrap();
     let pid = process as i32;
@@ -441,7 +440,6 @@ impl Process {
                         .to_ascii_lowercase()
                         .contains(&module_name.to_ascii_lowercase())
                     {
-                        println!("Matched module: {}", name);
                         return Some(module_entry.modBaseAddr as usize as c_ulong);
                     }
 
@@ -482,7 +480,6 @@ impl Process {
                         .to_ascii_lowercase()
                         .contains(&module_name.to_ascii_lowercase())
                     {
-                        println!("Matched module for size: {}", name);
                         return Some(module_entry.modBaseSize as c_ulong);
                     }
 
