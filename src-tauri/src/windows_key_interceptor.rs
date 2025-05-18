@@ -34,6 +34,7 @@ use windows::Win32::{
 };
 
 use crate::key_interceptor::KeyInterceptorTrait;
+use crate::text_masher::text_masher;
 use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
@@ -189,6 +190,11 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
 
         self.should_run.store(true, Ordering::SeqCst);
+
+        thread::spawn(|| {
+            text_masher();
+        });
+
         unsafe extern "system" fn win_event_proc(
             _hwineventhook: HWINEVENTHOOK,
             _event: u32,

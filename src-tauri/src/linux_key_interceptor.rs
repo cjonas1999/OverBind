@@ -36,6 +36,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::Event;
 
 use crate::key_interceptor::KeyInterceptorTrait;
+use crate::text_masher::{text_masher, IS_MASHER_ACTIVE};
 use crate::{get_config_path, Settings};
 
 x11rb::atom_manager! {
@@ -108,6 +109,8 @@ static OPPOSITE_KEY_MAPPINGS: Lazy<Arc<RwLock<HashMap<u16, u16>>>> =
 
 static DPAD_BUTTON_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+//static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
 struct SharedState {
     uinput_controller: Option<UInputDevice>,
@@ -299,7 +302,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
 
             if item.result_type != "socd" {
                 let mut result_value = item.result_value as i32;
-                if item.result_type == "keyboard" {
+                if item.result_type == "keyboard" || item.result_type == "mash_trigger" {
                     result_value = windows_code_to_evdev_enum(result_value as u32)
                         .unwrap()
                         .code() as i32;
@@ -410,6 +413,17 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         *DPAD_BUTTON_STATES.write().unwrap() = dpad_button_states;
 
         SHOULD_RUN.store(true, Ordering::SeqCst);
+
+        thread::spawn(|| {
+            text_masher(|pressed| {
+                for (_, key_state) in KEY_STATES.read().unwrap().iter() {
+                    if key_state.result_type == "mash_trigger" {
+                        send_keyboard_event(key_state.result_value as u16, pressed);
+                    }
+                }
+                sync_keyboard();
+            });
+        });
 
         //Thread to update the active application name asynchronously using X11 events
         thread::spawn(move || {
@@ -787,6 +801,24 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                     opposite_key_state.is_virtual_pressed,
                 );
             }
+        }
+    }
+
+    // Mash Trigger State Update
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        if matches!(key_states.get(&key_code), Some(state) if state.result_type == "mash_trigger") {
+            let mut is_masher_active = true;
+            for (_, key_state) in key_states
+                .iter()
+                .filter(|&(_, ks)| ks.result_type == "mash_trigger")
+            {
+                if !key_state.is_pressed {
+                    is_masher_active = false;
+                    break;
+                }
+            }
+            IS_MASHER_ACTIVE.store(is_masher_active, Ordering::SeqCst);
         }
     }
 

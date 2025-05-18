@@ -296,10 +296,6 @@ fn main() {
 
     info!("Overbind starting up");
 
-    thread::spawn(|| {
-        text_masher::text_masher();
-    });
-
     builder = builder.plugin(
         tauri_plugin_log::Builder::new()
             .target(tauri_plugin_log::Target::new(
@@ -466,7 +462,7 @@ fn main() {
 
     builder
         .build(tauri::generate_context!())
-        .expect("error while building OvrBind")
+        .expect("error while building OverBind")
         .run(|_app_handle, _event| {
             // Here you can handle specific events if needed
         });

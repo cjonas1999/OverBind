@@ -2,22 +2,63 @@ use asr::{
     game_engine::unity::mono::{self, UnityPointer},
     Address, PointerSize, Process,
 };
+use once_cell::sync::Lazy;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::{thread::sleep, time::Duration};
 
-use crate::livesplit_core::process_get_module_address;
+const TARGET_RATE: f64 = 36.0;
+pub static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
-static HOLLOW_KNIGHT_NAMES: [&str; 5] = [
-    "Hollow Knight.exe",
-    "hollow_knight.exe",    // Windows
-    "hollow_knight.x86_64", // Linux
-    "Hollow Knight",        // Mac
-    "hollow_knight",        // Mac
+struct HKConfig {
+    module_name: &'static str,
+    base_offset: u32,
+    pointer_chain: &'static [u32],
+}
+
+static CONFIGS: &[(&str, HKConfig)] = &[
+    (
+        "hollow_knight.x86_64",
+        HKConfig {
+            module_name: "libmono.so",
+            base_offset: 0x004AAA68,
+            pointer_chain: &[0x138, 0x898, 0x20, 0x28, 0x10c],
+        },
+    ),
+    (
+        "Hollow Knight.exe",
+        HKConfig {
+            module_name: "Hollow Knight.exe",
+            base_offset: 0x00FB85AC,
+            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x0],
+        },
+    ),
+    (
+        "hollow_knight.exe",
+        HKConfig {
+            module_name: "hollow_knight.exe",
+            base_offset: 0x00FB85AC,
+            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x0],
+        },
+    ),
 ];
 
 fn attach_hollow_knight() -> Option<(Process, &'static str)> {
-    HOLLOW_KNIGHT_NAMES
-        .into_iter()
-        .find_map(|name| Process::attach(name).map(|proc| (proc, name)))
+    CONFIGS
+        .iter()
+        .find_map(|(name, _config)| Process::attach(name).map(|proc| (proc, *name)))
+}
+
+fn get_config(process_name: &str) -> Option<&'static HKConfig> {
+    CONFIGS.iter().find_map(|(name, config)| {
+        if *name == process_name {
+            Some(config)
+        } else {
+            None
+        }
+    })
 }
 
 fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
@@ -39,54 +80,100 @@ fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
                 needed_retry = true;
                 println!("GameManagerFinder wait_attach: retry...");
             }
-        } else {
-            println!("GameManagerFinder failed to attach");
         }
     }
 }
 
-fn is_dialogue_box_hidden(process: &Process, base_address: Address) -> Option<bool> {
-    let ps = PointerSize::Bit64;
-    let mut addr = process.read_pointer(base_address, ps).ok()?;
-    addr = process.read_pointer(addr + 0x20, ps).ok()?;
-    addr = process.read_pointer(addr + 0x4, ps).ok()?;
-    addr = process.read_pointer(addr + 0x10, ps).ok()?;
-    addr = process.read_pointer(addr + 0x4, ps).ok()?;
-    addr = process.read_pointer(addr + 0x4, ps).ok()?;
-    addr = process.read_pointer(addr + 0x50, ps).ok()?;
-    let dialogue_box_addr = process.read_pointer(addr + 0x38, ps).ok()?;
+fn resolve_pointer_chain(
+    process: &Process,
+    base: Address,
+    chain: &[u32],
+    ps: PointerSize,
+) -> Option<Address> {
+    if chain.is_empty() {
+        return Some(base);
+    }
 
-    let hidden_val = process.read::<u8>(dialogue_box_addr + 0x2E).ok()?; // Read the `hidden` field
-    Some(hidden_val != 0)
+    let mut addr = process.read_pointer(base, ps).ok()?;
+    for &offset in &chain[..chain.len() - 1] {
+        addr = process.read_pointer(addr + offset, ps).ok()?;
+    }
+
+    Some(addr + chain[chain.len() - 1])
 }
 
-pub fn text_masher() {
+pub fn text_masher(do_key_event: impl Fn(bool)) {
+    println!("TextMasher starting up");
+    let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
+    let mut is_masher_active = false;
+    let mut is_key_down = false;
     loop {
         let process = attach_hollow_knight();
-        println!("Searching for Hollow Knight...");
         if let Some((process, process_name)) = process {
-            println!("Found Hollow Knight!");
+            println!("Found Hollow Knight: {:?}", process_name);
+            let config = match get_config(process_name) {
+                Some(cfg) => cfg,
+                None => {
+                    println!("No config found for {:?}", process_name);
+                    continue;
+                }
+            };
+
+            println!("GameManagerFinder wait_attach...");
             let _ = process.until_closes({
-                println!("GameManagerFinder wait_attach...");
-                //let pointer_size = process_pointer_size(process).unwrap_or(PointerSize::Bit64);
                 let (module, image) = wait_attach(&process);
 
                 loop {
-                    if let Some(module_address) = process.get_module_address(process_name).ok() {
-                        let base = module_address + 0x00FB85AC;
-                        let dialogue: &'static str = match is_dialogue_box_hidden(&process, base) {
-                            Some(true) => "false",
-                            Some(false) => "true",
-                            None => "null",
-                        };
-                        println!("Dialogue: {:?}", dialogue);
-                    } else {
-                        println!("Cannot attach to base module address");
+                    if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
+                        is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
+                        do_key_event(false);
+                        is_key_down = false;
                     }
 
-                    sleep(Duration::from_millis(100));
+                    if is_masher_active {
+                        if let Some(module_address) =
+                            process.get_module_address(config.module_name).ok()
+                        {
+                            let input_pointer: UnityPointer<3> = UnityPointer::new(
+                                "GameManager",
+                                0,
+                                &[
+                                    "_instance",
+                                    "<inputHandler>k__BackingField",
+                                    "acceptingInput",
+                                ],
+                            );
+                            let accepting_input: bool = input_pointer
+                                .deref(&process, &module, &image)
+                                .unwrap_or_default();
+
+                            if accepting_input {
+                                let base: Address = module_address + config.base_offset;
+                                if let Some(dialogue_box_addr) = resolve_pointer_chain(
+                                    &process,
+                                    base,
+                                    &config.pointer_chain,
+                                    PointerSize::Bit64,
+                                ) {
+                                    if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                                        do_key_event(!is_key_down);
+                                        is_key_down = !is_key_down;
+                                    }
+                                } else {
+                                    sleep(target_interval);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            println!("Cannot attach to base module address");
+                            break;
+                        }
+                    }
+
+                    sleep(target_interval);
                 }
             });
         }
+        sleep(target_interval);
     }
 }

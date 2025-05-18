@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 #[cfg(target_os = "windows")]
 use libc::{c_char, c_int, c_uint, c_ulong};
+#[cfg(target_os = "windows")]
 use windows::Win32::System::Diagnostics::ToolHelp::{
     Module32FirstW, Module32NextW, Process32FirstW, Process32NextW, MODULEENTRY32W,
     PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32,
