@@ -676,11 +676,32 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
         }
     }
 
+    // Mash Trigger State Update
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        if matches!(key_states.get(&key_code), Some(state) if state.result_type == "mash_trigger") {
+            let mut is_masher_active = true;
+            for (_, key_state) in key_states
+                .iter()
+                .filter(|&(_, ks)| ks.result_type == "mash_trigger")
+            {
+                if !key_state.is_pressed {
+                    is_masher_active = false;
+                    break;
+                }
+            }
+
+            if IS_MASHER_ACTIVE.load(Ordering::SeqCst) != is_masher_active {
+                IS_MASHER_ACTIVE.store(is_masher_active, Ordering::SeqCst);
+            }
+        }
+    }
+
     // Rebinds
     {
         let key_states = KEY_STATES.read().unwrap();
         if let Some(key_state) = key_states.get(&key_code) {
-            if key_state.result_type == "keyboard" {
+            if key_state.result_type == "keyboard" || key_state.result_type == "mash_trigger" {
                 send_keyboard_event(key_state.result_value as u16, key_is_down);
                 sync_keyboard();
                 return;
@@ -801,24 +822,6 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
                     opposite_key_state.is_virtual_pressed,
                 );
             }
-        }
-    }
-
-    // Mash Trigger State Update
-    {
-        let key_states = KEY_STATES.read().unwrap();
-        if matches!(key_states.get(&key_code), Some(state) if state.result_type == "mash_trigger") {
-            let mut is_masher_active = true;
-            for (_, key_state) in key_states
-                .iter()
-                .filter(|&(_, ks)| ks.result_type == "mash_trigger")
-            {
-                if !key_state.is_pressed {
-                    is_masher_active = false;
-                    break;
-                }
-            }
-            IS_MASHER_ACTIVE.store(is_masher_active, Ordering::SeqCst);
         }
     }
 
