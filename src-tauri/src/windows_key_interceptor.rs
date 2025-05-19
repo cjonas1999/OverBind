@@ -3,7 +3,7 @@
 use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use std::cmp;
+use std::{cmp, thread};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -34,7 +34,7 @@ use windows::Win32::{
 };
 
 use crate::key_interceptor::KeyInterceptorTrait;
-use crate::text_masher::text_masher;
+use crate::text_masher::{text_masher, IS_MASHER_ACTIVE};
 use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
@@ -192,7 +192,16 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         self.should_run.store(true, Ordering::SeqCst);
 
         thread::spawn(|| {
-            text_masher();
+            text_masher(|is_keydown| {
+                for (_, key_state) in KEY_STATES.read().unwrap().iter() {
+                    if key_state.result_type == "mash_trigger" {
+                        debug!("PRESSING {}", is_keydown);
+                        let _ = send_key_press(key_state.result_value as u32, is_keydown).map_err(|e| {
+                            error!("Error mashing key {:?}", e);
+                        });
+                    }
+                }
+            });
         });
 
         unsafe extern "system" fn win_event_proc(
@@ -355,6 +364,40 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         let shared_state = SHARED_STATE.read().unwrap();
         shared_state.hook_handle.is_some() || shared_state.window_hook_handle.is_some()
     }
+}
+
+fn send_key_press(keycode: u32, is_keydown: bool) -> Result<(), windows::core::Error> {
+    unsafe {
+        let extended_flag = if is_extended_key(keycode) {
+            KEYEVENTF_EXTENDEDKEY
+        } else {
+            KEYBD_EVENT_FLAGS(0)
+        };
+        let keyup_flag = if is_keydown {
+            KEYBD_EVENT_FLAGS(0)
+        } else {
+            KEYEVENTF_KEYUP
+        };
+
+        let scan_code =  MapVirtualKeyW(keycode, MAPVK_VK_TO_VSC_EX) as u16;
+
+
+        let input = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(0),
+                    wScan: scan_code,
+                    dwFlags: KEYEVENTF_SCANCODE | keyup_flag | extended_flag,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+
+        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+    }
+    Ok(())
 }
 
 fn is_extended_key(virtual_keycode: u32) -> bool {
@@ -593,6 +636,27 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
                         SendInput(inputs, inputs_size);
                     }
                 }
+            }
+        }
+    }
+
+    // Mash Trigger State Update
+    {
+        let key_states = KEY_STATES.read().unwrap();
+        if matches!(key_states.get(&key), Some(state) if state.result_type == "mash_trigger") {
+            let mut is_masher_active = true;
+            for (k, key_state) in key_states
+                .iter()
+                .filter(|&(_, ks)| ks.result_type == "mash_trigger")
+            {
+                if !key_state.is_pressed {
+                    is_masher_active = false;
+                    break;
+                }
+            }
+
+            if IS_MASHER_ACTIVE.load(Ordering::SeqCst) != is_masher_active {
+                IS_MASHER_ACTIVE.store(is_masher_active, Ordering::SeqCst);
             }
         }
     }

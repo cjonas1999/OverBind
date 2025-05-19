@@ -2,6 +2,7 @@ use asr::{
     game_engine::unity::mono::{self, UnityPointer},
     Address, PointerSize, Process,
 };
+use log::{debug, info};
 use once_cell::sync::Lazy;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -106,11 +107,11 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
     println!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
     let mut is_masher_active = false;
-    let mut is_key_down = false;
+
     loop {
         let process = attach_hollow_knight();
         if let Some((process, process_name)) = process {
-            println!("Found Hollow Knight: {:?}", process_name);
+            info!("Found Hollow Knight: {:?}", process_name);
             let config = match get_config(process_name) {
                 Some(cfg) => cfg,
                 None => {
@@ -127,7 +128,6 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
                     if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
                         is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
                         do_key_event(false);
-                        is_key_down = false;
                     }
 
                     if is_masher_active {
@@ -156,12 +156,9 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
                                     PointerSize::Bit64,
                                 ) {
                                     if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                        do_key_event(!is_key_down);
-                                        is_key_down = !is_key_down;
+                                        do_key_event(false);
+                                        do_key_event(true);
                                     }
-                                } else {
-                                    sleep(target_interval);
-                                    continue;
                                 }
                             }
                         } else {
