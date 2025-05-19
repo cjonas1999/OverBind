@@ -38,5 +38,20 @@
         "keycode": "46",
         "result_type": "keyboard",
         "result_value": 27
+    },
+    {
+        "keycode": "5a",
+        "result_type": "mash_trigger",
+        "result_value": 90
+    },
+    {
+        "keycode": "58",
+        "result_type": "mash_trigger",
+        "result_value": 88
+    },
+    {
+        "keycode": "41",
+        "result_type": "mash_trigger",
+        "result_value": 65
     }
 ]
