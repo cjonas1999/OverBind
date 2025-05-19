@@ -4,10 +4,10 @@ use asr::{
 };
 use log::{debug, info};
 use once_cell::sync::Lazy;
-use std::sync::{
+use std::{sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
-};
+}, time::Instant};
 use std::{thread::sleep, time::Duration};
 
 const TARGET_RATE: f64 = 36.0;
@@ -125,6 +125,7 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
             let _ = process.until_closes({
                 let (module, image) = wait_attach(&process);
 
+                let mut next_time = Instant::now() + target_interval;
                 loop {
                     if IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
                         if let Some(module_address) =
@@ -168,7 +169,13 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
                         }
                     }
 
-                    sleep(target_interval);
+                    // Calculate and wait for next interval
+                    let now = Instant::now();
+                    next_time += target_interval;
+
+                    if next_time > now {
+                        sleep(next_time - now);
+                    }
                 }
             });
         }
