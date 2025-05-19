@@ -416,9 +416,9 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
 
         thread::spawn(|| {
             text_masher(|pressed| {
-                for (_, key_state) in KEY_STATES.read().unwrap().iter() {
+                for (i, (_, key_state)) in KEY_STATES.read().unwrap().iter().enumerate() {
                     if key_state.result_type == "mash_trigger" {
-                        send_keyboard_event(key_state.result_value as u16, pressed);
+                        send_keyboard_event(key_state.result_value as u16, i % 2 == 0 && pressed);
                     }
                 }
                 sync_keyboard();
@@ -526,8 +526,8 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                     send_keyboard_event(key_event.code(), event.value() != 0);
                                     sync_keyboard();
                                 }
-                                let handle_duration = handle_start.elapsed();
-                                debug!("Handle duration in us: {:?}", handle_duration.as_micros());
+                                //let handle_duration = handle_start.elapsed();
+                                //debug!("Handle duration in us: {:?}", handle_duration.as_micros());
                             } else {
                                 // Because fetch_events is blocking when overbind is stopped we still will process one more event
                                 // Send it and immediately release it to resent the virtual keyboard back to normal

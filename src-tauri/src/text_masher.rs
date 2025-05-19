@@ -69,17 +69,17 @@ fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
         if let Some(module) = mono::Module::attach_auto_detect(process) {
             if !found_module {
                 found_module = true;
-                println!("GameManagerFinder wait_attach: module get_default_image...");
+                info!("GameManagerFinder wait_attach: module get_default_image...");
             }
             for _ in 0..0x10 {
                 if let Some(image) = module.get_default_image(process) {
-                    println!("GameManagerFinder wait_attach: got module and image");
+                    info!("GameManagerFinder wait_attach: got module and image");
                     return (module, image);
                 }
             }
             if !needed_retry {
                 needed_retry = true;
-                println!("GameManagerFinder wait_attach: retry...");
+                info!("GameManagerFinder wait_attach: retry...");
             }
         }
     }
@@ -104,9 +104,10 @@ fn resolve_pointer_chain(
 }
 
 pub fn text_masher(do_key_event: impl Fn(bool)) {
-    println!("TextMasher starting up");
+    info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
     let mut is_masher_active = false;
+    let mut is_key_down = false;
 
     loop {
         let process = attach_hollow_knight();
@@ -115,22 +116,17 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
             let config = match get_config(process_name) {
                 Some(cfg) => cfg,
                 None => {
-                    println!("No config found for {:?}", process_name);
+                    info!("No config found for {:?}", process_name);
                     continue;
                 }
             };
 
-            println!("GameManagerFinder wait_attach...");
+            info!("GameManagerFinder wait_attach...");
             let _ = process.until_closes({
                 let (module, image) = wait_attach(&process);
 
                 loop {
-                    if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
-                        is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
-                        do_key_event(false);
-                    }
-
-                    if is_masher_active {
+                    if IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
                         if let Some(module_address) =
                             process.get_module_address(config.module_name).ok()
                         {
@@ -155,14 +151,19 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
                                     &config.pointer_chain,
                                     PointerSize::Bit64,
                                 ) {
+                                    if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
+                                        is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
+                                        is_key_down = false;
+                                    }
                                     if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                        do_key_event(false);
-                                        do_key_event(true);
+                                        debug!("Trigger do key event: {}", is_masher_active);
+                                        do_key_event(is_key_down);
+                                        is_key_down = !is_key_down;
                                     }
                                 }
                             }
                         } else {
-                            println!("Cannot attach to base module address");
+                            info!("Cannot attach to base module address");
                             break;
                         }
                     }
