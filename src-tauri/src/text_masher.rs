@@ -33,7 +33,7 @@ static CONFIGS: &[(&str, HKConfig)] = &[
         HKConfig {
             module_name: "Hollow Knight.exe",
             base_offset: 0x00FB85AC,
-            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x0],
+            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x38, 0x0],
         },
     ),
     (
@@ -41,7 +41,7 @@ static CONFIGS: &[(&str, HKConfig)] = &[
         HKConfig {
             module_name: "hollow_knight.exe",
             base_offset: 0x00FB85AC,
-            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x0],
+            pointer_chain: &[0x20, 0x4, 0x10, 0x4, 0x4, 0x50, 0x38, 0x0],
         },
     ),
 ];
