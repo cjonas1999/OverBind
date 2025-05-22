@@ -103,11 +103,14 @@ fn resolve_pointer_chain(
     Some(addr + chain[chain.len() - 1])
 }
 
-pub fn text_masher(do_key_event: impl Fn(bool)) {
+pub fn text_masher(do_key_event: impl Fn(u8)) {
     info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
     let mut is_masher_active = false;
-    let mut is_key_down = false;
+
+    let max_keys = 3;
+
+    let mut key_to_press = 0;
 
     loop {
         let process = attach_hollow_knight();
@@ -154,17 +157,18 @@ pub fn text_masher(do_key_event: impl Fn(bool)) {
                                 ) {
                                     if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
                                         is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
-                                        is_key_down = false;
+                                        do_key_event(100);
                                     }
                                     if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
                                         debug!("Trigger do key event: {}", is_masher_active);
-                                        do_key_event(is_key_down);
-                                        is_key_down = !is_key_down;
+                                        do_key_event(key_to_press);
+                                        key_to_press = (key_to_press + 1) % max_keys;
                                     }
                                 }
                             }
                         } else {
                             info!("Cannot attach to base module address");
+                            do_key_event(100);
                             break;
                         }
                     }
