@@ -213,15 +213,12 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
                 keys.sort();
         
-                if let Some(press_keycode) = keys.get(((key_to_press + 1) % 3) as usize) {
+                if let Some(press_keycode) = keys.get(key_to_press as usize) {
+                    let _ = send_key_press(key_states[press_keycode].result_value as u32, false).map_err(|e| {
+                        error!("Error releasing key {:?}", e);
+                    });
                     let _ = send_key_press(key_states[press_keycode].result_value as u32, true).map_err(|e| {
                         error!("Error pressing key {:?}", e);
-                    });
-                }
-
-                if let Some(release_keycode) = keys.get(key_to_press as usize) {
-                    let _ = send_key_press(key_states[release_keycode].result_value as u32, false).map_err(|e| {
-                        error!("Error releasing key {:?}", e);
                     });
                 }
             });
