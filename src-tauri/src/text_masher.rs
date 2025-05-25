@@ -106,83 +106,88 @@ fn resolve_pointer_chain(
 pub fn text_masher(do_key_event: impl Fn(u8)) {
     info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
-    let mut is_masher_active = false;
-
     let max_keys = 3;
 
-    let mut key_to_press = 0;
-
     loop {
-        let process = attach_hollow_knight();
-        if let Some((process, process_name)) = process {
-            info!("Found Hollow Knight: {:?}", process_name);
-            let config = match get_config(process_name) {
-                Some(cfg) => cfg,
-                None => {
-                    info!("No config found for {:?}", process_name);
-                    continue;
+        let process_opt = attach_hollow_knight();
+        if let None = process_opt {
+            sleep(target_interval);
+            continue;
+        }
+
+        let (process, process_name) = process_opt.unwrap();
+        info!("Found Hollow Knight: {:?}", process_name);
+
+        let config = match get_config(process_name) {
+            Some(cfg) => cfg,
+            None => {
+                info!("No config found for {:?}", process_name);
+                continue;
+            }
+        };
+
+        info!("GameManagerFinder wait_attach...");
+        let _ = process.until_closes({
+            let (module, image) = wait_attach(&process);
+
+            loop {
+                if let Err(_) = process.get_module_address(config.module_name) {
+                    info!("Cannot attach to base module address");
+                    break;
                 }
-            };
 
-            info!("GameManagerFinder wait_attach...");
-            let _ = process.until_closes({
-                let (module, image) = wait_attach(&process);
-
-                let mut next_time = Instant::now() + target_interval;
-                loop {
-                    if IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
-                        if let Some(module_address) =
-                            process.get_module_address(config.module_name).ok()
-                        {
+                let module_address = process.get_module_address(config.module_name).unwrap();
+            
+                let base: Address = module_address + config.base_offset;
+                let dialogue_box_opt = resolve_pointer_chain(
+                                &process,
+                                base,
+                                &config.pointer_chain,
+                                PointerSize::Bit64,
+                            );
+                            
                             let input_pointer: UnityPointer<3> = UnityPointer::new(
                                 "GameManager",
-                                0,
-                                &[
-                                    "_instance",
-                                    "<inputHandler>k__BackingField",
-                                    "acceptingInput",
-                                ],
-                            );
-                            let accepting_input: bool = input_pointer
-                                .deref(&process, &module, &image)
-                                .unwrap_or_default();
+                    0,
+                    &[
+                        "_instance",
+                        "<inputHandler>k__BackingField",
+                        "acceptingInput",
+                        ],
+                    );
+                let accepting_input: bool = input_pointer
+                .deref(&process, &module, &image)
+                .unwrap_or_default();
+            
+                if accepting_input && IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
+                    if let Some(dialogue_box_addr) = dialogue_box_opt {
+                        let mut next_time = Instant::now() + target_interval;
+                        let mut key_to_press = 0;
 
-                            if accepting_input {
-                                let base: Address = module_address + config.base_offset;
-                                if let Some(dialogue_box_addr) = resolve_pointer_chain(
-                                    &process,
-                                    base,
-                                    &config.pointer_chain,
-                                    PointerSize::Bit64,
-                                ) {
-                                    if is_masher_active != IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
-                                        is_masher_active = IS_MASHER_ACTIVE.load(Ordering::SeqCst);
-                                        do_key_event(100);
-                                    }
-                                    if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                        debug!("Trigger do key event: {}", is_masher_active);
-                                        do_key_event(key_to_press);
-                                        key_to_press = (key_to_press + 1) % max_keys;
-                                    }
-                                }
+                        do_key_event(100);// release keys
+                        loop {
+                            if !IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
+                                break;
                             }
-                        } else {
-                            info!("Cannot attach to base module address");
-                            do_key_event(100);
-                            break;
+
+                            if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                                debug!("Trigger do key event: {}", key_to_press);
+                                do_key_event(key_to_press);
+                                key_to_press = (key_to_press + 1) % max_keys;
+                            }
+
+                            // Calculate and wait for next interval
+                            let now = Instant::now();
+                            next_time += target_interval;
+                            if next_time > now {
+                                sleep(next_time - now);
+                            }
                         }
-                    }
 
-                    // Calculate and wait for next interval
-                    let now = Instant::now();
-                    next_time += target_interval;
-
-                    if next_time > now {
-                        sleep(next_time - now);
+                        do_key_event(100);// release keys
                     }
                 }
-            });
-        }
-        sleep(target_interval);
+            }
+        });
     }
 }
