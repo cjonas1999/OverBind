@@ -201,6 +201,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                             });
                         }
                     }
+                    return;
                 }
 
                 

@@ -415,12 +415,31 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         SHOULD_RUN.store(true, Ordering::SeqCst);
 
         thread::spawn(|| {
-            text_masher(|pressed| {
-                for (i, (_, key_state)) in KEY_STATES.read().unwrap().iter().enumerate() {
-                    if key_state.result_type == "mash_trigger" {
-                        send_keyboard_event(key_state.result_value as u16, i % 2 == 0 && pressed);
+            text_masher(|key_to_press| {
+                if key_to_press > 3 {
+                    for (_, key_state) in KEY_STATES.read().unwrap().iter() {
+                        if key_state.result_type == "mash_trigger" {
+                            send_keyboard_event(key_state.result_value as u16, false);
+                        }
+                    }
+                } else {
+                    let key_states = KEY_STATES.read().unwrap();
+                    let mut keys: Vec<u32> = key_states
+                        .iter()
+                        .filter(|&(_, ks)| ks.result_type == "mash_trigger")
+                        .map(|(&k, _)| k)
+                        .collect();
+
+                    keys.sort();
+            
+                    if let Some(press_keycode) = keys.get(key_to_press as usize) {
+                        send_keyboard_event(key_states[press_keycode].result_value as u32, true);
+                    }
+                    if let Some(release_keycode) = keys.get(((key_to_press + 1) % 3) as usize) {
+                        send_keyboard_event(key_states[release_keycode].result_value as u32, false);
                     }
                 }
+
                 sync_keyboard();
             });
         });
