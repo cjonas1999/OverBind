@@ -201,26 +201,25 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                             });
                         }
                     }
-                    return;
-                }
+                } else {
+                    let key_states = KEY_STATES.read().unwrap();
+                    let mut keys: Vec<u32> = key_states
+                        .iter()
+                        .filter(|&(_, ks)| ks.result_type == "mash_trigger")
+                        .map(|(&k, _)| k)
+                        .collect();
 
-                
-                let key_states = KEY_STATES.read().unwrap();
-                let mut keys: Vec<u32> = key_states
-                    .iter()
-                    .filter(|&(_, ks)| ks.result_type == "mash_trigger")
-                    .map(|(&k, _)| k)
-                    .collect();
+                    keys.sort();
+            
+                    if let Some(press_keycode) = keys.get(key_to_press as usize) {
+                        let _ = send_key_press(key_states[press_keycode].result_value as u32, true).map_err(|e| {
+                            error!("Error pressing key {:?}", e);
+                        });
 
-                keys.sort();
-        
-                if let Some(press_keycode) = keys.get(key_to_press as usize) {
-                    let _ = send_key_press(key_states[press_keycode].result_value as u32, false).map_err(|e| {
-                        error!("Error releasing key {:?}", e);
-                    });
-                    let _ = send_key_press(key_states[press_keycode].result_value as u32, true).map_err(|e| {
-                        error!("Error pressing key {:?}", e);
-                    });
+                        let _ = send_key_press(key_states[press_keycode].result_value as u32, false).map_err(|e| {
+                            error!("Error releasing key {:?}", e);
+                        });
+                    }
                 }
             });
         });
