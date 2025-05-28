@@ -164,17 +164,13 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
                         let mut next_time = Instant::now() + target_interval;
                         let mut key_to_press = 0;
 
-                        do_key_event(100);// release keys
-                        loop {
-                            if !IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
-                                break;
-                            }
-
-                            if matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                debug!("Trigger do key event: {}", key_to_press);
-                                do_key_event(key_to_press);
-                                key_to_press = (key_to_press + 1) % max_keys;
-                            }
+                        if IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                            do_key_event(100);// release keys
+                        }
+                        while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                            debug!("Trigger do key event: {}", key_to_press);
+                            do_key_event(key_to_press);
+                            key_to_press = (key_to_press + 1) % max_keys;
 
                             // Calculate and wait for next interval
                             let now = Instant::now();
@@ -184,7 +180,6 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
                             }
                         }
 
-                        do_key_event(100);// release keys
                     }
                 }
             }
