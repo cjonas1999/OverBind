@@ -3,12 +3,12 @@
 use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-use std::{cmp, thread};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
+use std::{cmp, thread};
 use vigem_client::Client;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
@@ -34,7 +34,7 @@ use windows::Win32::{
 };
 
 use crate::key_interceptor::KeyInterceptorTrait;
-use crate::text_masher::{text_masher, IS_MASHER_ACTIVE};
+use crate::text_masher::{text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
 use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +64,8 @@ static KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
 
 static OPPOSITE_KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, OppositeKey>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+static MASHING_KEYS: Lazy<Arc<RwLock<Vec<u32>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
 
 struct SharedState {
     target: Option<vigem_client::Xbox360Wired<Client>>,
@@ -130,6 +132,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             serde_json::from_str(&contents).map_err(|e| e.to_string())?;
         let mut key_states = HashMap::new();
         let mut opposite_key_states = HashMap::new();
+        let mut mashing_key_list = Vec::new();
 
         for item in &data {
             let keycode =
@@ -145,6 +148,10 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                     "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
                     keycode, key_state.result_type, key_state.result_value
                 );
+            }
+
+            if item.result_type == "mash_trigger" {
+                mashing_key_list.push(keycode);
             }
         }
 
@@ -188,41 +195,38 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
         *KEY_STATES.write().unwrap() = key_states;
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
+        *MASHING_KEYS.write().unwrap() = mashing_key_list;
 
         self.should_run.store(true, Ordering::SeqCst);
 
-        thread::spawn(|| {
-            text_masher(|key_to_press| {
-                if key_to_press > 3 {
-                    for (_, key_state) in KEY_STATES.read().unwrap().iter() {
-                        if key_state.result_type == "mash_trigger" {
-                            let _ = send_key_press(key_state.result_value as u32, false).map_err(|e| {
+        if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
+            info!("SPAWNING MASHER THREAD");
+            thread::spawn(|| {
+                text_masher(|key_to_press| {
+                    if key_to_press > MAX_MASHING_KEY_COUNT {
+                        for keycode in MASHING_KEYS.read().unwrap().iter() {
+                            let _ = send_key_press(*keycode, false).map_err(|e| {
                                 error!("Error releasing key {:?}", e);
                             });
                         }
-                    }
-                } else {
-                    let key_states = KEY_STATES.read().unwrap();
-                    let mut keys: Vec<u32> = key_states
-                        .iter()
-                        .filter(|&(_, ks)| ks.result_type == "mash_trigger")
-                        .map(|(&k, _)| k)
-                        .collect();
+                    } else {
+                        for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
+                            if (i as u8) == key_to_press {
+                                let _ = send_key_press(*keycode, true).map_err(|e| {
+                                    error!("Error pressing key {:?}", e);
+                                });
 
-                    keys.sort();
-            
-                    if let Some(press_keycode) = keys.get(key_to_press as usize) {
-                        let _ = send_key_press(key_states[press_keycode].result_value as u32, true).map_err(|e| {
-                            error!("Error pressing key {:?}", e);
-                        });
-
-                        let _ = send_key_press(key_states[press_keycode].result_value as u32, false).map_err(|e| {
-                            error!("Error releasing key {:?}", e);
-                        });
+                                let _ = send_key_press(*keycode, false).map_err(|e| {
+                                    error!("Error releasing key {:?}", e);
+                                });
+                            }
+                        }
                     }
-                }
+                });
             });
-        });
+        } else {
+            info!("Not spawning masher thread, wrong number of mashing keys found.");
+        }
 
         unsafe extern "system" fn win_event_proc(
             _hwineventhook: HWINEVENTHOOK,
@@ -399,8 +403,7 @@ fn send_key_press(keycode: u32, is_keydown: bool) -> Result<(), windows::core::E
             KEYEVENTF_KEYUP
         };
 
-        let scan_code =  MapVirtualKeyW(keycode, MAPVK_VK_TO_VSC_EX) as u16;
-
+        let scan_code = MapVirtualKeyW(keycode, MAPVK_VK_TO_VSC_EX) as u16;
 
         let input = INPUT {
             r#type: INPUT_KEYBOARD,

@@ -10,6 +10,8 @@ use std::{sync::{
 }, time::Instant};
 use std::{thread::sleep, time::Duration};
 
+pub const MAX_MASHING_KEY_COUNT: u8 = 3;
+
 const TARGET_RATE: f64 = 36.0;
 pub static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
@@ -106,7 +108,6 @@ fn resolve_pointer_chain(
 pub fn text_masher(do_key_event: impl Fn(u8)) {
     info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
-    let max_keys = 3;
 
     loop {
         let process_opt = attach_hollow_knight();
@@ -158,7 +159,7 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
                 let accepting_input: bool = input_pointer
                 .deref(&process, &module, &image)
                 .unwrap_or_default();
-            
+                
                 if accepting_input && IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
                     if let Some(dialogue_box_addr) = dialogue_box_opt {
                         let mut next_time = Instant::now() + target_interval;
@@ -170,7 +171,7 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
                         while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
                             debug!("Trigger do key event: {}", key_to_press);
                             do_key_event(key_to_press);
-                            key_to_press = (key_to_press + 1) % max_keys;
+                            key_to_press = (key_to_press + 1) % MAX_MASHING_KEY_COUNT;
 
                             // Calculate and wait for next interval
                             let now = Instant::now();
