@@ -132,13 +132,11 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
             let (module, image) = wait_attach(&process);
 
             loop {
-                if let Err(_) = process.get_module_address(config.module_name) {
+                let Ok(module_address) = process.get_module_address(config.module_name) else {
                     info!("Cannot attach to base module address");
                     break;
-                }
+                };
 
-                let module_address = process.get_module_address(config.module_name).unwrap();
-            
                 let base: Address = module_address + config.base_offset;
                 let dialogue_box_opt = resolve_pointer_chain(
                                 &process,
