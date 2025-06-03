@@ -36,7 +36,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::Event;
 
 use crate::key_interceptor::KeyInterceptorTrait;
-use crate::text_masher::{text_masher, IS_MASHER_ACTIVE};
+use crate::text_masher::{text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
 use crate::{get_config_path, Settings};
 
 x11rb::atom_manager! {
@@ -109,6 +109,8 @@ static OPPOSITE_KEY_MAPPINGS: Lazy<Arc<RwLock<HashMap<u16, u16>>>> =
 
 static DPAD_BUTTON_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+static MASHING_KEYS: Lazy<Arc<RwLock<Vec<u16>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
 
 //static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
@@ -294,6 +296,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         let mut opposite_key_states = HashMap::new();
         let mut opposite_key_mappings = HashMap::new();
         let mut dpad_button_states = HashMap::new();
+        let mut mashing_key_list = Vec::new();
 
         for item in &data {
             let windows_keycode =
@@ -336,7 +339,11 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                     debug!(
                         "DPad button code: {:?}, Opposite dpad button code: {:?}",
                         item.result_value, opposite_dpad
-                    )
+                    );
+                }
+
+                if item.result_type == "mash_trigger" {
+                    mashing_key_list.push(keycode);
                 }
 
                 let key_state = key_states.entry(keycode).or_insert_with(|| KeyState {
@@ -411,38 +418,34 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
         *OPPOSITE_KEY_MAPPINGS.write().unwrap() = opposite_key_mappings;
         *DPAD_BUTTON_STATES.write().unwrap() = dpad_button_states;
+        *MASHING_KEYS.write().unwrap() = mashing_key_list;
 
         SHOULD_RUN.store(true, Ordering::SeqCst);
 
-        thread::spawn(|| {
-            text_masher(|key_to_press| {
-                if key_to_press > 3 {
-                    for (_, key_state) in KEY_STATES.read().unwrap().iter() {
-                        if key_state.result_type == "mash_trigger" {
-                            send_keyboard_event(key_state.result_value as u16, false);
+        if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
+            info!("SPAWNING MASHER THREAD");
+            thread::spawn(|| {
+                text_masher(|key_to_press| {
+                    if key_to_press > MAX_MASHING_KEY_COUNT {
+                        for keycode in MASHING_KEYS.read().unwrap().iter() {
+                            send_keyboard_event(*keycode, false);
+                            sync_keyboard();
+                        }
+                    } else {
+                        for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
+                            if (i as u8) == key_to_press {
+                                send_keyboard_event(*keycode, true);
+                                sync_keyboard();
+                                send_keyboard_event(*keycode, false);
+                                sync_keyboard();
+                            }
                         }
                     }
-                } else {
-                    let key_states = KEY_STATES.read().unwrap();
-                    let mut keys: Vec<u32> = key_states
-                        .iter()
-                        .filter(|&(_, ks)| ks.result_type == "mash_trigger")
-                        .map(|(&k, _)| k)
-                        .collect();
-
-                    keys.sort();
-            
-                    if let Some(press_keycode) = keys.get(key_to_press as usize) {
-                        send_keyboard_event(key_states[press_keycode].result_value as u32, true);
-                    }
-                    if let Some(release_keycode) = keys.get(((key_to_press + 1) % 3) as usize) {
-                        send_keyboard_event(key_states[release_keycode].result_value as u32, false);
-                    }
-                }
-
-                sync_keyboard();
+                });
             });
-        });
+        } else {
+            info!("Not spawning masher thread, wrong number of mashing keys found. Found {} keys, max allowed is {}", MASHING_KEYS.read().unwrap().len(), MAX_MASHING_KEY_COUNT);
+        }
 
         //Thread to update the active application name asynchronously using X11 events
         thread::spawn(move || {
