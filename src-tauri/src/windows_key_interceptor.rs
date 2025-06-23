@@ -628,18 +628,18 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
 
     {
         let opposite_key_states = OPPOSITE_KEY_STATES.read().unwrap();
-        for (_, opposite_key_state) in opposite_key_states
-            .iter()
-            .filter(|&(_, ks)| ks.opposite_key_type == String::from("face_button"))
-        {
+
+        if opposite_key_states.contains_key(&key) {
+            let cloned_key_state = opposite_key_states.get(&key).unwrap().clone();
+
+            let opposite_key_state = opposite_key_states
+                .get(&cloned_key_state.opposite_key_value)
+                .unwrap();
+
             if let Some(opposite_key_mapping) = opposite_key_state.opposite_key_mapping {
                 let mask = opposite_key_mapping as u16;
 
-                if opposite_key_state.is_virtual_pressed {
-                    // If it's virtually pressed, set the specific bit
-                    face_buttons |= mask;
-                } else {
-                    // If it's virtually unpressed, clear the specific bit
+                if opposite_key_state.is_pressed && !opposite_key_state.is_virtual_pressed {
                     let clear_mask = !mask;
                     face_buttons &= clear_mask;
                 }
