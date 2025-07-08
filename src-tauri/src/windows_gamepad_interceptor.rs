@@ -61,72 +61,43 @@ enum SdlInput {
     Axis(sdl3::gamepad::Axis),
 }
 
-struct SdlToVigemButton {
-    sdl: sdl3::gamepad::Button,
-    vigem: u16,
-}
-
-static SDL_TO_VIGEM_BUTTON: [SdlToVigemButton; 15] = [
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::North,
-        vigem: vigem_client::XButtons::Y,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::East,
-        vigem: vigem_client::XButtons::B,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::South,
-        vigem: vigem_client::XButtons::A,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::West,
-        vigem: vigem_client::XButtons::X,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::Back,
-        vigem: vigem_client::XButtons::BACK,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::Guide,
-        vigem: vigem_client::XButtons::GUIDE,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::Start,
-        vigem: vigem_client::XButtons::START,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::LeftStick,
-        vigem: vigem_client::XButtons::LTHUMB,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::RightStick,
-        vigem: vigem_client::XButtons::RTHUMB,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::LeftShoulder,
-        vigem: vigem_client::XButtons::LB,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::RightShoulder,
-        vigem: vigem_client::XButtons::RB,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::DPadUp,
-        vigem: vigem_client::XButtons::UP,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::DPadDown,
-        vigem: vigem_client::XButtons::DOWN,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::DPadLeft,
-        vigem: vigem_client::XButtons::LEFT,
-    },
-    SdlToVigemButton {
-        sdl: sdl3::gamepad::Button::DPadRight,
-        vigem: vigem_client::XButtons::RIGHT,
-    },
+static BUTTON_MAPPINGS: [(sdl3::gamepad::Button, u16); 15] = [
+    (sdl3::gamepad::Button::North, vigem_client::XButtons::Y),
+    (sdl3::gamepad::Button::East, vigem_client::XButtons::B),
+    (sdl3::gamepad::Button::South, vigem_client::XButtons::A),
+    (sdl3::gamepad::Button::West, vigem_client::XButtons::X),
+    (sdl3::gamepad::Button::Back, vigem_client::XButtons::BACK),
+    (sdl3::gamepad::Button::Guide, vigem_client::XButtons::GUIDE),
+    (sdl3::gamepad::Button::Start, vigem_client::XButtons::START),
+    (
+        sdl3::gamepad::Button::LeftStick,
+        vigem_client::XButtons::LTHUMB,
+    ),
+    (
+        sdl3::gamepad::Button::RightStick,
+        vigem_client::XButtons::RTHUMB,
+    ),
+    (
+        sdl3::gamepad::Button::LeftShoulder,
+        vigem_client::XButtons::LB,
+    ),
+    (
+        sdl3::gamepad::Button::RightShoulder,
+        vigem_client::XButtons::RB,
+    ),
+    (sdl3::gamepad::Button::DPadUp, vigem_client::XButtons::UP),
+    (
+        sdl3::gamepad::Button::DPadDown,
+        vigem_client::XButtons::DOWN,
+    ),
+    (
+        sdl3::gamepad::Button::DPadLeft,
+        vigem_client::XButtons::LEFT,
+    ),
+    (
+        sdl3::gamepad::Button::DPadRight,
+        vigem_client::XButtons::RIGHT,
+    ),
 ];
 
 pub(crate) struct WindowsGamepadInterceptor {
@@ -180,7 +151,6 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
             list.push(SdlInput::Button(sdl3::gamepad::Button::South));
             list.push(SdlInput::Axis(sdl3::gamepad::Axis::TriggerLeft));
 
-            let x = SdlInput::Axis(sdl3::gamepad::Axis::LeftX);
             loop {
                 // Identify gamepad with correct id
                 let pad_opt = gamepads.iter().find(|&joystick_id| {
@@ -201,9 +171,9 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                     let mut left_trigger = pad.axis(sdl3::gamepad::Axis::TriggerLeft) as u8;
                     let mut right_trigger = pad.axis(sdl3::gamepad::Axis::TriggerRight) as u8;
 
-                    for input in SDL_TO_VIGEM_BUTTON.iter() {
-                        if pad.button(input.sdl) {
-                            face_buttons = face_buttons | input.vigem as u16;
+                    for (sdl_button, vigem_button) in BUTTON_MAPPINGS.iter() {
+                        if pad.button(*sdl_button) {
+                            face_buttons = face_buttons | *vigem_button as u16;
                         }
                     }
 
