@@ -37,6 +37,7 @@ asr = { git = "https://github.com/AlexKnauth/asr", branch = "mono-5-split-index"
 libc = "0.2.171"
 lazy_static = "1.5.0"
 futures = "0.3.31"
+sdl3 = { version = "0.14.31", features = ["build-from-source"] }# TODO: remove build-from-source
 
 [[bin]]
 name = "overbind"
