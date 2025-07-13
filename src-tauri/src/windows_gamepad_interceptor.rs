@@ -162,25 +162,35 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                     gamepad_system.guid_for_id(*joystick_id).string() == expected_id
                 });
                 if let Ok(pad) = gamepad_system.open(*pad_opt.unwrap()) {
-                    // Translate real gamepad inputs to virtual gamepad inputs
-                    let mut face_buttons: u16 = 0;
-                    let thumb_lx = pad.axis(sdl3::gamepad::Axis::LeftX);
-                    let thumb_ly = pad.axis(sdl3::gamepad::Axis::LeftY);
-                    let thumb_rx = pad.axis(sdl3::gamepad::Axis::RightX);
-                    let thumb_ry = pad.axis(sdl3::gamepad::Axis::RightY);
-                    let mut left_trigger = pad.axis(sdl3::gamepad::Axis::TriggerLeft) as u8;
-                    let mut right_trigger = pad.axis(sdl3::gamepad::Axis::TriggerRight) as u8;
-
-                    for (sdl_button, vigem_button) in BUTTON_MAPPINGS.iter() {
-                        if pad.button(*sdl_button) {
-                            face_buttons = face_buttons | *vigem_button as u16;
-                        }
-                    }
-
-                    info!("face_buttons: {:?} {:?}", face_buttons, thumb_lx);
-
                     loop {
                         gamepad_system.update();
+
+                        // Translate real gamepad inputs to virtual gamepad inputs
+                        let mut face_buttons: u16 = 0;
+                        let thumb_lx = pad.axis(sdl3::gamepad::Axis::LeftX);
+                        let thumb_ly = pad.axis(sdl3::gamepad::Axis::LeftY);
+                        let thumb_rx = pad.axis(sdl3::gamepad::Axis::RightX);
+                        let thumb_ry = pad.axis(sdl3::gamepad::Axis::RightY);
+                        let mut left_trigger = pad.axis(sdl3::gamepad::Axis::TriggerLeft) as u8;
+                        let mut right_trigger = pad.axis(sdl3::gamepad::Axis::TriggerRight) as u8;
+
+                        for (sdl_button, vigem_button) in BUTTON_MAPPINGS.iter() {
+                            if pad.button(*sdl_button) {
+                                face_buttons = face_buttons | *vigem_button as u16;
+                            }
+                        }
+
+                        let gamepad = vigem_client::XGamepad {
+                            buttons: vigem_client::XButtons(face_buttons),
+                            left_trigger: left_trigger,
+                            right_trigger: right_trigger,
+                            thumb_lx: thumb_lx,
+                            thumb_ly: thumb_ly.saturating_neg(),
+                            thumb_rx: thumb_rx,
+                            thumb_ry: thumb_ry.saturating_neg(),
+                        };
+
+                        // Detect Mashing Buttons
                         let mut all_pressed = true;
                         for button in list.iter() {
                             match button {
@@ -198,7 +208,18 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                             info!("all_pressed: {:?}", all_pressed);
                         }
 
-                        thread::sleep(std::time::Duration::from_millis(1000));
+                        // update gamepad state
+                        {
+                            let mut shared_state = SHARED_STATE.write().unwrap();
+                            let mut temp_target = shared_state.target.take();
+                            if let Some(ref mut target) = &mut temp_target {
+                                let _ = target.update(&gamepad);
+
+                                shared_state.target = temp_target;
+                            }
+                        }
+
+                        thread::sleep(std::time::Duration::from_millis(5));
                     }
                 }
 
