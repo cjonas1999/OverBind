@@ -92,6 +92,7 @@ pub(crate) struct WindowsKeyInterceptor {
 impl KeyInterceptorTrait for WindowsKeyInterceptor {
     fn new() -> Self {
         Self {
+            // TODO: Actually use this or remove it
             should_run: Arc::new(AtomicBool::new(false)),
         }
     }

@@ -2,6 +2,7 @@
 
 use log::{debug, error, info};
 use once_cell::sync::Lazy;
+use sdl3::event::Event;
 use sdl3::gamepad;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -10,7 +11,7 @@ use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::{cmp, thread};
-use vigem_client::Client;
+use vigem_client::{Client, XGamepad};
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Threading::{
@@ -39,26 +40,27 @@ use crate::text_masher::{text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
 use crate::{get_config_path, Settings};
 
 struct SharedState {
+    gamepad_state: Option<vigem_client::XGamepad>,
     target: Option<vigem_client::Xbox360Wired<Client>>,
     hook_handle: Option<HHOOK>,
     window_hook_handle: Option<HWINEVENTHOOK>,
     allowed_programs: Option<Vec<String>>,
-    block_kb_on_controller: bool,
 }
 
 static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
     Arc::new(RwLock::new(SharedState {
+        gamepad_state: None,
         target: None,
         hook_handle: None,
         window_hook_handle: None,
         allowed_programs: None,
-        block_kb_on_controller: false,
     }))
 });
 
-enum SdlInput {
-    Button(sdl3::gamepad::Button),
-    Axis(sdl3::gamepad::Axis),
+enum MashTrigger {
+    Button(u16),
+    LeftTrigger,
+    RightTrigger,
 }
 
 static BUTTON_MAPPINGS: [(sdl3::gamepad::Button, u16); 15] = [
@@ -126,11 +128,11 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
 
         let mut shared_state = SHARED_STATE.write().unwrap();
         shared_state.target = Some(target);
+        shared_state.gamepad_state = Some(vigem_client::XGamepad::default());
         if !settings.allowed_programs.is_empty() {
             info!("Allowed programs: {:?}", settings.allowed_programs);
             shared_state.allowed_programs = Some(settings.allowed_programs.clone());
         }
-        shared_state.block_kb_on_controller = settings.block_kb_on_controller;
 
         Ok(())
     }
@@ -146,10 +148,10 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
             let expected_id = "0300fa67c82d00000631000014017801";
             info!("expected_id: {}", expected_id);
 
-            let mut list: Vec<SdlInput> = Vec::new();
-            list.push(SdlInput::Button(sdl3::gamepad::Button::North));
-            list.push(SdlInput::Button(sdl3::gamepad::Button::South));
-            list.push(SdlInput::Axis(sdl3::gamepad::Axis::TriggerLeft));
+            let mut list: Vec<MashTrigger> = Vec::new();
+            list.push(MashTrigger::Button(vigem_client::XButtons::Y as u16));
+            list.push(MashTrigger::Button(vigem_client::XButtons::B as u16));
+            list.push(MashTrigger::LeftTrigger);
 
             loop {
                 // Identify gamepad with correct id
@@ -162,6 +164,8 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                     gamepad_system.guid_for_id(*joystick_id).string() == expected_id
                 });
                 if let Ok(pad) = gamepad_system.open(*pad_opt.unwrap()) {
+                    let mut gamepad_state = vigem_client::XGamepad::default();
+
                     loop {
                         gamepad_system.update();
 
@@ -180,7 +184,42 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                             }
                         }
 
-                        let gamepad = vigem_client::XGamepad {
+                        // Detect Mashing Buttons
+                        let mut all_pressed = true;
+                        for button in list.iter() {
+                            match button {
+                                MashTrigger::Button(b) => {
+                                    all_pressed &= *b > 0;
+                                }
+                                MashTrigger::LeftTrigger => {
+                                    all_pressed &= left_trigger > 0;
+                                }
+                                MashTrigger::RightTrigger => {
+                                    all_pressed &= right_trigger > 0;
+                                }
+                            }
+                        }
+                        if all_pressed {
+                            info!("all_pressed: {:?}", all_pressed);
+                            // revert mashing buttons to previous state so the mashing code has
+                            // full control
+                            for button in list.iter() {
+                                match button {
+                                    MashTrigger::Button(b) => {
+                                        face_buttons -= !gamepad_state.buttons.raw & b;
+                                    }
+                                    MashTrigger::LeftTrigger => {
+                                        left_trigger = gamepad_state.left_trigger;
+                                    }
+                                    MashTrigger::RightTrigger => {
+                                        right_trigger = gamepad_state.right_trigger;
+                                    }
+                                }
+                            }
+                        }
+
+                        // update gamepad state
+                        gamepad_state = vigem_client::XGamepad {
                             buttons: vigem_client::XButtons(face_buttons),
                             left_trigger: left_trigger,
                             right_trigger: right_trigger,
@@ -189,31 +228,11 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                             thumb_rx: thumb_rx,
                             thumb_ry: thumb_ry.saturating_neg(),
                         };
-
-                        // Detect Mashing Buttons
-                        let mut all_pressed = true;
-                        for button in list.iter() {
-                            match button {
-                                SdlInput::Button(b) => {
-                                    info!("button: {:?} {:?}", *b, pad.button(*b));
-                                    all_pressed &= pad.button(*b);
-                                }
-                                SdlInput::Axis(a) => {
-                                    info!("axis: {:?}", pad.axis(*a));
-                                    all_pressed &= pad.axis(*a) > 0;
-                                }
-                            }
-                        }
-                        if all_pressed {
-                            info!("all_pressed: {:?}", all_pressed);
-                        }
-
-                        // update gamepad state
                         {
                             let mut shared_state = SHARED_STATE.write().unwrap();
                             let mut temp_target = shared_state.target.take();
                             if let Some(ref mut target) = &mut temp_target {
-                                let _ = target.update(&gamepad);
+                                let _ = target.update(&gamepad_state);
 
                                 shared_state.target = temp_target;
                             }
@@ -226,6 +245,7 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                 thread::sleep(std::time::Duration::from_millis(1000));
             }
         });
+
         Ok(())
     }
 
