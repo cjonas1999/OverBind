@@ -42,8 +42,6 @@ use crate::{get_config_path, Settings};
 struct SharedState {
     gamepad_state: Option<vigem_client::XGamepad>,
     target: Option<vigem_client::Xbox360Wired<Client>>,
-    hook_handle: Option<HHOOK>,
-    window_hook_handle: Option<HWINEVENTHOOK>,
     allowed_programs: Option<Vec<String>>,
 }
 
@@ -51,8 +49,6 @@ static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
     Arc::new(RwLock::new(SharedState {
         gamepad_state: None,
         target: None,
-        hook_handle: None,
-        window_hook_handle: None,
         allowed_programs: None,
     }))
 });
