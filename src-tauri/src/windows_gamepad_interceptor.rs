@@ -250,7 +250,6 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
     }
 
     fn is_running(&self) -> bool {
-        let shared_state = SHARED_STATE.read().unwrap();
-        shared_state.hook_handle.is_some() || shared_state.window_hook_handle.is_some()
+        true
     }
 }
