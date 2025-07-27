@@ -16,7 +16,7 @@ The following are the recommended instructions for setting up the appropriate pe
 1. Create file `/etc/udev/rules.d/99-uinput.rules`
 2. Paste contents into file `KERNEL=="uinput", GROUP="input", MODE="0660"`. This grants permission to read and write to your input devices to anyone in the "input" group.
 3. Run command `sudo usermod -aG input $(whoami)`. This adds the current user to the input group.
-4. Create file `/etc/modules-load.d/uinput`
+4. Create file `/etc/modules-load.d/uinput.conf`
 5. Paste contents into file `uinput`
 6. Restart computer
 7. Set your device in the overbind settings in the "Input Devices" dropdown.
