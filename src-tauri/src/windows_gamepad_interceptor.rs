@@ -53,6 +53,9 @@ static SHARED_STATE: Lazy<Arc<RwLock<SharedState>>> = Lazy::new(|| {
     }))
 });
 
+static MASHING_BUTTONS: Lazy<Arc<RwLock<Vec<MashTrigger>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
+
 enum MashTrigger {
     Button(u16),
     LeftTrigger,
@@ -134,6 +137,92 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
     }
 
     fn start(&mut self, _: &tauri::AppHandle) -> Result<(), String> {
+        let mut mashing_key_list = Vec::new();
+        mashing_key_list.push(MashTrigger::Button(vigem_client::XButtons::Y as u16));
+        mashing_key_list.push(MashTrigger::Button(vigem_client::XButtons::B as u16));
+        mashing_key_list.push(MashTrigger::LeftTrigger);
+        *MASHING_BUTTONS.write().unwrap() = mashing_key_list;
+
+        // TODO: mashing thread
+        if MASHING_BUTTONS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
+            info!("SPAWNING MASHER THREAD");
+            thread::spawn(|| {
+                text_masher(|key_to_press| {
+                    {
+                        let mut shared_state = SHARED_STATE.write().unwrap();
+
+                        let mut temp_target = shared_state.target.take();
+                        let mut gamepad_state =
+                            shared_state.gamepad_state.take().unwrap_or_default();
+
+                        let mut face_buttons: u16 = gamepad_state.buttons.raw;
+                        let thumb_lx = gamepad_state.thumb_lx;
+                        let thumb_ly = gamepad_state.thumb_ly;
+                        let thumb_rx = gamepad_state.thumb_rx;
+                        let thumb_ry = gamepad_state.thumb_ry;
+                        let mut left_trigger = gamepad_state.left_trigger;
+                        let mut right_trigger = gamepad_state.right_trigger;
+
+                        if key_to_press > MAX_MASHING_KEY_COUNT {
+                            // stop mashing
+                            for input in MASHING_BUTTONS.read().unwrap().iter() {
+                                match input {
+                                    MashTrigger::Button(b) => face_buttons &= !b,
+                                    MashTrigger::LeftTrigger => left_trigger = 0,
+                                    MashTrigger::RightTrigger => right_trigger = 0,
+                                }
+                            }
+                        } else {
+                            for (i, input) in MASHING_BUTTONS.read().unwrap().iter().enumerate() {
+                                info!("{}", key_to_press);
+                                if (i as u8) == key_to_press {
+                                    match input {
+                                        MashTrigger::Button(b) => face_buttons |= b,
+                                        MashTrigger::LeftTrigger => {
+                                            left_trigger = {
+                                                info!("LEFT TRIG PRESS!");
+                                                u8::max_value()
+                                            }
+                                        }
+                                        MashTrigger::RightTrigger => {
+                                            right_trigger = u8::max_value()
+                                        }
+                                    }
+                                } else if (i as u8) == (key_to_press + 1) % MAX_MASHING_KEY_COUNT {
+                                    match input {
+                                        MashTrigger::Button(b) => face_buttons &= !b,
+                                        MashTrigger::LeftTrigger => left_trigger = 0,
+                                        MashTrigger::RightTrigger => right_trigger = 0,
+                                    }
+                                }
+                            }
+                        }
+
+                        // update gamepad state
+                        gamepad_state = vigem_client::XGamepad {
+                            buttons: vigem_client::XButtons(face_buttons),
+                            left_trigger: left_trigger,
+                            right_trigger: right_trigger,
+                            thumb_lx: thumb_lx,
+                            thumb_ly: thumb_ly,
+                            thumb_rx: thumb_rx,
+                            thumb_ry: thumb_ry,
+                        };
+                        {
+                            let mut shared_state = SHARED_STATE.write().unwrap();
+                            let mut temp_target = shared_state.target.take();
+                            if let Some(ref mut target) = &mut temp_target {
+                                let _ = target.update(&gamepad_state);
+
+                                shared_state.target = temp_target;
+                            }
+                        }
+                    }
+                });
+            });
+        } else {
+            info!("Not spawning masher thread, wrong number of mashing keys found.");
+        }
         // Controller Input Polling
         thread::spawn(|| {
             sdl3::hint::set("SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1");
@@ -143,11 +232,6 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
 
             let expected_id = "0300fa67c82d00000631000014017801";
             info!("expected_id: {}", expected_id);
-
-            let mut list: Vec<MashTrigger> = Vec::new();
-            list.push(MashTrigger::Button(vigem_client::XButtons::Y as u16));
-            list.push(MashTrigger::Button(vigem_client::XButtons::B as u16));
-            list.push(MashTrigger::LeftTrigger);
 
             loop {
                 // Identify gamepad with correct id
@@ -182,27 +266,41 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
 
                         // Detect Mashing Buttons
                         let mut all_pressed = true;
-                        for button in list.iter() {
-                            match button {
-                                MashTrigger::Button(b) => {
-                                    all_pressed &= *b > 0;
-                                }
-                                MashTrigger::LeftTrigger => {
-                                    all_pressed &= left_trigger > 0;
-                                }
-                                MashTrigger::RightTrigger => {
-                                    all_pressed &= right_trigger > 0;
+                        if MASHING_BUTTONS.read().unwrap().len() != 0 {
+                            for button in MASHING_BUTTONS.read().unwrap().iter() {
+                                match button {
+                                    MashTrigger::Button(b) => {
+                                        all_pressed &= (face_buttons & *b) > 0;
+                                    }
+                                    MashTrigger::LeftTrigger => {
+                                        all_pressed &= left_trigger > 0;
+                                    }
+                                    MashTrigger::RightTrigger => {
+                                        all_pressed &= right_trigger > 0;
+                                    }
                                 }
                             }
+                        } else {
+                            //no mashing keys configured
+                            all_pressed = false
+                        }
+
+                        if IS_MASHER_ACTIVE.load(Ordering::SeqCst) != all_pressed {
+                            IS_MASHER_ACTIVE.store(all_pressed, Ordering::SeqCst);
                         }
                         if all_pressed {
                             info!("all_pressed: {:?}", all_pressed);
                             // revert mashing buttons to previous state so the mashing code has
                             // full control
-                            for button in list.iter() {
+                            for button in MASHING_BUTTONS.read().unwrap().iter() {
                                 match button {
                                     MashTrigger::Button(b) => {
-                                        face_buttons -= !gamepad_state.buttons.raw & b;
+                                        let prev_button_state = gamepad_state.buttons.raw & *b;
+                                        if prev_button_state > 0 {
+                                            face_buttons &= *b;
+                                        } else {
+                                            face_buttons |= *b;
+                                        }
                                     }
                                     MashTrigger::LeftTrigger => {
                                         left_trigger = gamepad_state.left_trigger;
