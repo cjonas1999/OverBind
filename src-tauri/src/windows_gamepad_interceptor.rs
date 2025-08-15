@@ -255,8 +255,10 @@ impl KeyInterceptorTrait for WindowsGamepadInterceptor {
                         let thumb_ly = pad.axis(sdl3::gamepad::Axis::LeftY);
                         let thumb_rx = pad.axis(sdl3::gamepad::Axis::RightX);
                         let thumb_ry = pad.axis(sdl3::gamepad::Axis::RightY);
-                        let mut left_trigger = pad.axis(sdl3::gamepad::Axis::TriggerLeft) as u8;
-                        let mut right_trigger = pad.axis(sdl3::gamepad::Axis::TriggerRight) as u8;
+                        let mut left_trigger =
+                            (pad.axis(sdl3::gamepad::Axis::TriggerLeft) / 128) as u8;
+                        let mut right_trigger =
+                            (pad.axis(sdl3::gamepad::Axis::TriggerRight) / 128) as u8;
 
                         for (sdl_button, vigem_button) in BUTTON_MAPPINGS.iter() {
                             if pad.button(*sdl_button) {
