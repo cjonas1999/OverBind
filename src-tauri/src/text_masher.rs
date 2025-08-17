@@ -181,6 +181,7 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
 
                     }
                 }
+                do_key_event(100);// release keys
             }
         });
     }
