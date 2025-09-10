@@ -16,8 +16,6 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 #[cfg(target_os = "windows")]
 use windows_key_interceptor::WindowsKeyInterceptor;
 
-use windows_gamepad_interceptor::WindowsGamepadInterceptor;
-
 use log::info;
 use serde_json::Value;
 use std::fs::{self, File};
@@ -30,7 +28,6 @@ mod linux_key_interceptor;
 mod livesplit_core;
 mod mac_key_interceptor;
 mod text_masher;
-mod windows_gamepad_interceptor;
 mod windows_key_interceptor;
 
 use crate::key_interceptor::KeyInterceptorTrait;
@@ -51,25 +48,15 @@ struct KeyInterceptorState(Arc<Mutex<Box<dyn KeyInterceptorTrait + Send>>>);
 
 impl KeyInterceptorState {
     fn new(settings: Settings) -> Self {
+        #[cfg(target_os = "windows")]
         let interceptor: Box<dyn KeyInterceptorTrait + Send> =
-            if settings.controller_input.is_some() {
-                Box::new(WindowsGamepadInterceptor::new())
-            } else {
-                #[cfg(target_os = "windows")]
-                {
-                    Box::new(WindowsKeyInterceptor::new())
-                }
+            Box::new(WindowsKeyInterceptor::new());
 
-                #[cfg(target_os = "linux")]
-                {
-                    Box::new(LinuxKeyInterceptor::new())
-                }
+        #[cfg(target_os = "linux")]
+        let interceptor: Box<dyn KeyInterceptorTrait + Send> = Box::new(LinuxKeyInterceptor::new());
 
-                #[cfg(target_os = "macos")]
-                {
-                    Box::new(MacKeyInterceptor::new())
-                }
-            };
+        #[cfg(target_os = "macos")]
+        let interceptor: Box<dyn KeyInterceptorTrait + Send> = Box::new(MacKeyInterceptor::new());
 
         let interceptor_arc = Arc::new(Mutex::new(interceptor));
         {
@@ -84,9 +71,6 @@ impl KeyInterceptorState {
 struct Settings {
     close_to_tray: bool,
     allowed_programs: Vec<String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    controller_input: Option<String>,
     #[serde(default)]
     block_kb_on_controller: bool,
     #[cfg(target_os = "linux")]

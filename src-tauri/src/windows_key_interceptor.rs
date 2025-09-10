@@ -34,7 +34,7 @@ use windows::Win32::{
 };
 
 use crate::key_interceptor::KeyInterceptorTrait;
-use crate::text_masher::{text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
+use crate::text_masher::{text_masher, SHOULD_TERMINATE_MASHER, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
 use crate::{get_config_path, Settings};
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +202,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
         if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
             info!("SPAWNING MASHER THREAD");
+
             thread::spawn(|| {
                 text_masher(|key_to_press| {
                     if key_to_press > MAX_MASHING_KEY_COUNT {
@@ -383,6 +384,8 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             }
             shared_state.window_hook_handle = None;
         }
+
+        SHOULD_TERMINATE_MASHER.store(true, Ordering::SeqCst);
     }
 
     fn is_running(&self) -> bool {
@@ -669,7 +672,7 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         let key_states = KEY_STATES.read().unwrap();
         if matches!(key_states.get(&key), Some(state) if state.result_type == "mash_trigger") {
             let mut is_masher_active = true;
-            for (k, key_state) in key_states
+            for (_, key_state) in key_states
                 .iter()
                 .filter(|&(_, ks)| ks.result_type == "mash_trigger")
             {

@@ -2748,7 +2748,6 @@ dependencies = [
  "core-graphics",
  "dirs 5.0.1",
  "evdev",
- "fern",
  "futures",
  "glib 0.20.4",
  "gtk",

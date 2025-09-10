@@ -9,11 +9,13 @@ use std::{sync::{
     Arc,
 }, time::Instant};
 use std::{thread::sleep, time::Duration};
+use std::fmt;
 
 pub const MAX_MASHING_KEY_COUNT: u8 = 3;
 
 const TARGET_RATE: f64 = 36.0;
 pub static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+pub static SHOULD_TERMINATE_MASHER: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
 struct HKConfig {
     module_name: &'static str,
@@ -108,8 +110,14 @@ fn resolve_pointer_chain(
 pub fn text_masher(do_key_event: impl Fn(u8)) {
     info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
+    IS_MASHER_ACTIVE.store(false, Ordering::SeqCst);
+    SHOULD_TERMINATE_MASHER.store(false, Ordering::SeqCst);
 
-    loop {
+    'mainloop: loop {
+        if SHOULD_TERMINATE_MASHER.load(Ordering::SeqCst) {
+            break 'mainloop
+        }
+
         let process_opt = attach_hollow_knight();
         if let None = process_opt {
             sleep(target_interval);
@@ -132,6 +140,10 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
             let (module, image) = wait_attach(&process);
 
             loop {
+                if SHOULD_TERMINATE_MASHER.load(Ordering::SeqCst) {
+                    break 'mainloop
+                }
+
                 let Ok(module_address) = process.get_module_address(config.module_name) else {
                     info!("Cannot attach to base module address");
                     break;
