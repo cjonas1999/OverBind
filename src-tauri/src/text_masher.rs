@@ -2,14 +2,12 @@ use asr::{
     game_engine::unity::mono::{self, UnityPointer},
     Address, PointerSize, Process,
 };
-use log::{debug, info};
 use once_cell::sync::Lazy;
 use std::{sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 }, time::Instant};
 use std::{thread::sleep, time::Duration};
-use std::fmt;
 
 pub const MAX_MASHING_KEY_COUNT: u8 = 3;
 
@@ -73,17 +71,17 @@ fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
         if let Some(module) = mono::Module::attach_auto_detect(process) {
             if !found_module {
                 found_module = true;
-                info!("GameManagerFinder wait_attach: module get_default_image...");
+                log::info!("GameManagerFinder wait_attach: module get_default_image...");
             }
             for _ in 0..0x10 {
                 if let Some(image) = module.get_default_image(process) {
-                    info!("GameManagerFinder wait_attach: got module and image");
+                    log::info!("GameManagerFinder wait_attach: got module and image");
                     return (module, image);
                 }
             }
             if !needed_retry {
                 needed_retry = true;
-                info!("GameManagerFinder wait_attach: retry...");
+                log::info!("GameManagerFinder wait_attach: retry...");
             }
         }
     }
@@ -107,14 +105,15 @@ fn resolve_pointer_chain(
     Some(addr + chain[chain.len() - 1])
 }
 
-pub fn text_masher(do_key_event: impl Fn(u8)) {
-    info!("TextMasher starting up");
+pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> Result<(), Box<dyn std::error::Error>>) {
+    log::info!("TextMasher starting up");
     let target_interval: Duration = Duration::from_secs_f64(1.0 / TARGET_RATE);
     IS_MASHER_ACTIVE.store(false, Ordering::SeqCst);
     SHOULD_TERMINATE_MASHER.store(false, Ordering::SeqCst);
 
     'mainloop: loop {
         if SHOULD_TERMINATE_MASHER.load(Ordering::SeqCst) {
+            let _ = toggle_overlay(false);
             break 'mainloop
         }
 
@@ -125,27 +124,31 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
         }
 
         let (process, process_name) = process_opt.unwrap();
-        info!("Found Hollow Knight: {:?}", process_name);
+        log::info!("Found Hollow Knight: {:?}", process_name);
 
         let config = match get_config(process_name) {
             Some(cfg) => cfg,
             None => {
-                info!("No config found for {:?}", process_name);
+                log::info!("No config found for {:?}", process_name);
                 continue;
             }
         };
 
-        info!("GameManagerFinder wait_attach...");
+        log::info!("GameManagerFinder wait_attach...");
         let _ = process.until_closes({
             let (module, image) = wait_attach(&process);
 
             loop {
                 if SHOULD_TERMINATE_MASHER.load(Ordering::SeqCst) {
+                    let res = toggle_overlay(false);
+                    if res.is_err() {
+                        log::error!("Failed to toggle masher overlay");
+                    }
                     break 'mainloop
                 }
 
                 let Ok(module_address) = process.get_module_address(config.module_name) else {
-                    info!("Cannot attach to base module address");
+                    log::info!("Cannot attach to base module address");
                     break;
                 };
 
@@ -177,23 +180,27 @@ pub fn text_masher(do_key_event: impl Fn(u8)) {
 
                         if IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
                             do_key_event(100);// release keys
-                        }
-                        while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                            debug!("Trigger do key event: {}", key_to_press);
-                            do_key_event(key_to_press);
-                            key_to_press = (key_to_press + 1) % MAX_MASHING_KEY_COUNT;
+                            while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                                if toggle_overlay(true).is_err() {
+                                    log::error!("Failed to toggle masher overlay");
+                                    break;
+                                }
+                                log::debug!("Trigger do key event: {}", key_to_press);
+                                do_key_event(key_to_press);
+                                key_to_press = (key_to_press + 1) % MAX_MASHING_KEY_COUNT;
 
-                            // Calculate and wait for next interval
-                            let now = Instant::now();
-                            next_time += target_interval;
-                            if next_time > now {
-                                sleep(next_time - now);
+                                // Calculate and wait for next interval
+                                let now = Instant::now();
+                                next_time += target_interval;
+                                if next_time > now {
+                                    sleep(next_time - now);
+                                }
                             }
+                            do_key_event(100);
+                            let _ = toggle_overlay(false);
                         }
-
                     }
                 }
-                do_key_event(100);// release keys
             }
         });
     }

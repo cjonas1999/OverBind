@@ -1,15 +1,82 @@
+use ctor::ctor;
 use libc::{c_char, c_void, RTLD_DEFAULT, RTLD_NEXT};
 use once_cell::sync::OnceCell;
 use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ffi::CString;
+use std::fs;
+use std::io::Read;
 use std::io::Write;
 use std::mem;
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
+use std::process::Command;
 use std::ptr;
 use std::ptr::NonNull;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Once;
+use std::thread;
+use std::time::Duration;
+
+static MASHER_ACTIVE: AtomicBool = AtomicBool::new(false);
+static INIT_SOCKET: Once = Once::new();
+
+fn start_socket_thread() {
+    thread::spawn(|| {
+        std::panic::set_hook(Box::new(|info| {
+            let msg = format!("Socket listener panicked: {}", info);
+            log(&msg);
+        }));
+
+        let socket_path = "/tmp/masher_overlay.sock";
+        if Path::new(socket_path).exists() {
+            if std::os::unix::net::UnixStream::connect(socket_path).is_ok() {
+                log("Existing socket is live — keeping current listener");
+                return;
+            }
+            log("Stale socket detected — removing it");
+            fs::remove_file(socket_path).ok();
+            // Give the system a moment in case previous listener is shutting down
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        let listener = match UnixListener::bind(socket_path) {
+            Ok(l) => l,
+            Err(e) => {
+                log(&format!("Failed to bind socket: {:?}", e));
+                return;
+            }
+        };
+
+        fs::set_permissions(socket_path, fs::Permissions::from_mode(0o777)).ok();
+        log("Socket listener thread started; entering accept loop");
+
+        for stream in listener.incoming() {
+            log("Got a connection!");
+            let mut buffer = [0; 16];
+            if let Ok(mut s) = stream {
+                if let Ok(n) = s.read(&mut buffer) {
+                    let cmd = std::str::from_utf8(&buffer[..n]).unwrap_or("");
+                    match cmd.trim() {
+                        "masher_active" => MASHER_ACTIVE.store(true, Ordering::SeqCst),
+                        "masher_inactive" => MASHER_ACTIVE.store(false, Ordering::SeqCst),
+                        _ => (),
+                    }
+                }
+            }
+        }
+
+        log("Socket listener loop exited unexpectedly!");
+    });
+}
+
+#[ctor]
+fn overlay_init() {
+    log("Overlay constructor running — starting socket thread");
+    start_socket_thread();
+}
 
 // ---------- small wrapper so OnceCell<T> can be Sync ----------
 struct Sym(*mut c_void);
@@ -118,7 +185,6 @@ unsafe extern "C" fn glClear_proxy(mask: u32) {
     log("glClear_proxy");
     // draw overlay (your function should guard context etc.)
     render_imgui_for_current_context();
-    log("finished rendering from glClear_proxy");
     // call original
     if let Some(sym) = ORIG_GLCLEAR.get() {
         if !sym.0.is_null() {
@@ -139,7 +205,6 @@ unsafe extern "C" fn glDrawElements_proxy(mode: u32, count: i32, ty: u32, indice
     }
     log("glDrawElements_proxy");
     render_imgui_for_current_context();
-    log("finished rendering from glDrawElements_proxy");
     if let Some(sym) = ORIG_GLDRAWELEMENTS.get() {
         if !sym.0.is_null() {
             let orig: extern "C" fn(u32, i32, u32, *const c_void) = mem::transmute(sym.0);
@@ -159,7 +224,6 @@ unsafe extern "C" fn glDrawArrays_proxy(mode: u32, first: i32, count: i32) {
     }
     log("glDrawArrays_proxy");
     render_imgui_for_current_context();
-    log("finished rendering from glDrawArrays_proxy");
     if let Some(sym) = ORIG_GLDRAWARRAYS.get() {
         if !sym.0.is_null() {
             let orig: extern "C" fn(u32, i32, i32) = mem::transmute(sym.0);
@@ -172,7 +236,7 @@ unsafe extern "C" fn glDrawArrays_proxy(mode: u32, first: i32, count: i32) {
 // ---------- hook glXGetProcAddress ----------
 #[no_mangle]
 pub unsafe extern "C" fn glXGetProcAddress(name: *const u8) -> *const c_void {
-    log("Calling glXGetProcAddress");
+    log("glXGetProcAddress");
     let real = match real_glx_getproc() {
         Some(f) => f,
         None => {
@@ -246,19 +310,14 @@ fn get_imgui_context() -> &'static mut imgui::Context {
 fn with_overlay<F: FnOnce(&mut imgui::Context, &mut Overlay)>(f: F) {
     let ctx = get_imgui_context();
     OVERLAY.with(|cell| {
-        log("fetched OVERLAY");
         let mut ov_opt = cell.borrow_mut();
-        log("borrow_mut");
         if ov_opt.is_none() {
-            log("replacing Overlay");
             ov_opt.replace(Overlay { renderer: None });
         }
-        log("calling f");
         let ov = ov_opt.as_mut().expect("overlay state just set");
 
         f(ctx, ov);
     });
-    log("with_overlay done");
 }
 
 unsafe fn renderer_gl_loader(name: &str) -> *const c_void {
@@ -299,10 +358,8 @@ unsafe fn try_init_renderer_if_ready(ov: &mut Overlay, ctx: &mut imgui::Context)
 /// Very basic stub: just logs that we were called.
 pub unsafe fn render_imgui_for_current_context() {
     with_overlay(|ctx, ov| {
-        log("calling overlay callback");
         // lazy-create renderer when a valid GL context is current
         if ov.renderer.is_none() {
-            log("creating renderer");
             if !try_init_renderer_if_ready(ov, ctx) {
                 return;
             }
@@ -318,26 +375,27 @@ pub unsafe fn render_imgui_for_current_context() {
 
         let width = vp[2].max(1) as f32;
         let height = vp[3].max(1) as f32;
-        log(&format!("viewport = {:?}", vp));
         ctx.io_mut().display_size = [width, height];
 
         let ui = ctx.new_frame();
-        log("got new frame");
 
         {
             // Get the foreground draw list (always rendered on top)
             let draw_list = ui.get_foreground_draw_list();
 
+            let visible = MASHER_ACTIVE.load(Ordering::SeqCst);
+
+            let color = if visible {
+                imgui::ImColor32::from_rgba(255, 0, 0, 255) // red
+            } else {
+                imgui::ImColor32::from_rgba(100, 100, 100, 150) // dim gray
+            };
+
             // Pick a font (optional — default font will work if it contains the glyph)
-            draw_list.add_text(
-                [20.0, 60.0],
-                imgui::ImColor32::from_rgba(0x99, 0x99, 0x99, 0x99),
-                " ",
-            );
+            draw_list.add_text([20.0, 60.0], color, " ");
         }
 
         if let Some(renderer) = ov.renderer.as_mut() {
-            log("rendering with renderer");
             renderer.render(ctx);
             log("finished rendering");
         }
@@ -345,7 +403,7 @@ pub unsafe fn render_imgui_for_current_context() {
 }
 
 fn log(msg: &str) {
-    return;
+    //return;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)

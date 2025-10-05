@@ -12,8 +12,8 @@ use std::path::Path;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{thread, vec};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use uinput::event::absolute::Hat::{X0, Y0};
@@ -36,7 +36,9 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::Event;
 
 use crate::key_interceptor::KeyInterceptorTrait;
-use crate::text_masher::{text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
+use crate::text_masher::{
+    text_masher, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT, SHOULD_TERMINATE_MASHER,
+};
 use crate::{get_config_path, Settings};
 
 x11rb::atom_manager! {
@@ -423,26 +425,34 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         SHOULD_RUN.store(true, Ordering::SeqCst);
 
         if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
-            info!("SPAWNING MASHER THREAD");
-            thread::spawn(|| {
-                text_masher(|key_to_press| {
-                    if key_to_press > MAX_MASHING_KEY_COUNT {
-                        for keycode in MASHING_KEYS.read().unwrap().iter() {
-                            send_keyboard_event(*keycode, false);
-                            sync_keyboard();
-                        }
-                    } else {
-                        for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
-                            if (i as u8) == key_to_press {
-                                send_keyboard_event(*keycode, true);
-                                sync_keyboard();
-                                send_keyboard_event(*keycode, false);
-                                sync_keyboard();
+            if toggle_masher_overlay(false).is_ok() {
+                info!("SPAWNING MASHER THREAD");
+                thread::spawn(|| {
+                    text_masher(
+                        |key_to_press| {
+                            if key_to_press > MAX_MASHING_KEY_COUNT {
+                                for keycode in MASHING_KEYS.read().unwrap().iter() {
+                                    send_keyboard_event(*keycode, false);
+                                    sync_keyboard();
+                                }
+                            } else {
+                                for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate()
+                                {
+                                    if (i as u8) == key_to_press {
+                                        send_keyboard_event(*keycode, true);
+                                        sync_keyboard();
+                                        send_keyboard_event(*keycode, false);
+                                        sync_keyboard();
+                                    }
+                                }
                             }
-                        }
-                    }
+                        },
+                        toggle_masher_overlay,
+                    );
                 });
-            });
+            } else {
+                error!("Failed to find masher overlay, please make sure game is running with libmasher.so loaded on the LD_PRELOAD environment variable");
+            }
         } else {
             info!("Not spawning masher thread, wrong number of mashing keys found. Found {} keys, max allowed is {}", MASHING_KEYS.read().unwrap().len(), MAX_MASHING_KEY_COUNT);
         }
@@ -484,10 +494,10 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                                                 ))
                                         {
                                             debug!("Showing cursor");
-                                            command = Some("show");
+                                            command = Some("show_cursor");
                                         } else {
                                             debug!("Hiding cursor");
-                                            command = Some("hide");
+                                            command = Some("hide_cursor");
                                         }
 
                                         stream
@@ -641,6 +651,7 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
                 child.kill().expect("Failed to stop cursor overlay");
             }
         }
+        SHOULD_TERMINATE_MASHER.store(true, Ordering::SeqCst);
     }
 
     fn is_running(&self) -> bool {
@@ -853,6 +864,23 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
 
     sync_keyboard();
     sync_controller();
+}
+
+fn toggle_masher_overlay(active: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stream = UnixStream::connect("/tmp/masher_overlay.sock")?;
+    let mut command = None;
+    if active {
+        debug!("Showing masher overlay");
+        command = Some("masher_active");
+    } else {
+        debug!("Hiding masher overlay");
+        command = Some("masher_inactive");
+    }
+
+    stream
+        .write_all(command.unwrap().as_bytes())
+        .expect("Failed to send command");
+    Ok(())
 }
 
 fn send_keyboard_event(key_code: u16, key_is_down: bool) {
@@ -1464,6 +1492,7 @@ fn check_focus(conn: &impl Connection, atoms: &Atoms, root_window: Window) -> St
         .ok_or("_NET_ACTIVE_WINDOW is empty")
         .unwrap();
 
+    info!("Window ID: {:?}", focus);
     let wm_class = WmClass::get(conn, focus).unwrap();
     let name = conn
         .get_property(false, focus, atoms.WM_NAME, atoms.STRING, 0, 0x1000)

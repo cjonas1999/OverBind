@@ -45,13 +45,13 @@ fn main() {
     // Spawn a thread to listen for commands and update the visibility flag
     thread::spawn(move || {
         for stream in listener.incoming() {
-            let mut buffer = [0; 4]; // Buffer for incoming message (e.g., "show" or "hide")
+            let mut buffer = [0; 11]; // Buffer for incoming message (e.g., "show" or "hide")
             if let Ok(mut stream) = stream {
                 stream.read_exact(&mut buffer).unwrap();
                 let command = std::str::from_utf8(&buffer).unwrap();
-                if command == "show" {
+                if command == "show_cursor" {
                     SHOW_CURSOR.store(true, std::sync::atomic::Ordering::SeqCst);
-                } else if command == "hide" {
+                } else if command == "hide_cursor" {
                     SHOW_CURSOR.store(false, std::sync::atomic::Ordering::SeqCst);
                 }
             }
