@@ -1,6 +1,6 @@
 [package]
 name = "overbind"
-version = "1.5.1"
+version = "2.0.0-beta"
 description = "Bind keyboard buttons to Xbox360 controller inputs"
 authors = ["arnabp", "cjonas1999"]
 license = ""

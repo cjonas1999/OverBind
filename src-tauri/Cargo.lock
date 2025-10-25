@@ -2961,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "overbind"
-version = "1.5.1"
+version = "2.0.0-beta"
 dependencies = [
  "asr",
  "cairo-rs 0.19.4",
