@@ -4,7 +4,7 @@ import { WINDOWS_ECMA_KEYMAP, CONTROLLER_INPUTS } from "../constants";
 import Dropdown from "./Dropdown";
 import { InputTypeIcon } from "./InputTypeIcon";
 
-type BindType = "controller" | "keyboard" | "socd" | undefined;
+type BindType = "controller" | "keyboard" | "socd" | "mash_trigger" | undefined;
 
 interface Keybind {
   id: number;
@@ -161,7 +161,7 @@ function KeybindSettings({
               ? {
                 ...b,
                 input: activeKeybindId[1] ? name : b.input,
-                output: activeKeybindId[1] ? b.output : name,
+                output: activeKeybindId[1] && bind.type !== "mash_trigger" ? b.output : name,
               }
               : b,
           );
@@ -259,66 +259,68 @@ function KeybindSettings({
                 </div>
               </td>
               <td className="px-4 py-2">
-                {bind.type === "controller" ? (
-                  <Dropdown
-                    options={Object.keys(CONTROLLER_INPUTS)}
-                    onChange={(option) => {
-                      const newKeybinds = binds.map((b) =>
-                        b.id === bind.id
-                          ? {
-                            ...b,
-                            output: option,
-                            type: bind.type,
-                          }
-                          : b,
-                      );
-                      setBinds(newKeybinds);
-                    }}
-                  >
-                    {bind.output}
-                  </Dropdown>
-                ) : (
-                  <Dropdown
-                    options={Object.keys(WINDOWS_ECMA_KEYMAP)}
-                    onOpen={() => {
-                      setActiveKeybindId([bind.id, false]);
-                    }}
-                    onBlur={() => cancelChangeKey(bind.id, false)}
-                    onChange={(option) => {
-                      const newKeybinds = binds.map((b) =>
-                        b.id === bind.id
-                          ? {
-                            ...b,
-                            output: option,
-                            type: bind.type,
-                          }
-                          : b,
-                      );
-                      setBinds(newKeybinds);
-                      if (bind.type === "socd") {
-                        const theseLinkedBinds = linkedBinds.find(
-                          (b) => b[0] === bind.id || b[1] === bind.id,
+                {bind.type !== "mash_trigger" && (<>
+                  {bind.type === "controller" ? (
+                    <Dropdown
+                      options={Object.keys(CONTROLLER_INPUTS)}
+                      onChange={(option) => {
+                        const newKeybinds = binds.map((b) =>
+                          b.id === bind.id
+                            ? {
+                              ...b,
+                              output: option,
+                              type: bind.type,
+                            }
+                            : b,
                         );
-                        setSocdLinkedBinds(
-                          newKeybinds,
-                          theseLinkedBinds![0],
-                          theseLinkedBinds![1],
-                          false,
+                        setBinds(newKeybinds);
+                      }}
+                    >
+                      {bind.output}
+                    </Dropdown>
+                  ) : (
+                    <Dropdown
+                      options={Object.keys(WINDOWS_ECMA_KEYMAP)}
+                      onOpen={() => {
+                        setActiveKeybindId([bind.id, false]);
+                      }}
+                      onBlur={() => cancelChangeKey(bind.id, false)}
+                      onChange={(option) => {
+                        const newKeybinds = binds.map((b) =>
+                          b.id === bind.id
+                            ? {
+                              ...b,
+                              output: option,
+                              type: bind.type,
+                            }
+                            : b,
                         );
+                        setBinds(newKeybinds);
+                        if (bind.type === "socd") {
+                          const theseLinkedBinds = linkedBinds.find(
+                            (b) => b[0] === bind.id || b[1] === bind.id,
+                          );
+                          setSocdLinkedBinds(
+                            newKeybinds,
+                            theseLinkedBinds![0],
+                            theseLinkedBinds![1],
+                            false,
+                          );
+                        }
+                      }}
+                      openAt={
+                        bind.id === activeKeybindId?.[0] && !activeKeybindId?.[1]
+                          ? undefined
+                          : { open: false, x: -500, y: 0 }
                       }
-                    }}
-                    openAt={
-                      bind.id === activeKeybindId?.[0] && !activeKeybindId?.[1]
-                        ? undefined
-                        : { open: false, x: -500, y: 0 }
-                    }
-                  >
-                    {bind.output}
-                  </Dropdown>
-                )}
+                    >
+                      {bind.output}
+                    </Dropdown>
+                  )}
+                </>)}
               </td>
               <td className="px-4 py-2 text-3xl">
-                {bind.type === "socd" ? "↔" : "←"}
+                {bind.type === "mash_trigger" ? "" : (bind.type === "socd" ? "↔" : "←")}
               </td>
               <td className="px-4 py-2">
                 <Dropdown
@@ -333,6 +335,7 @@ function KeybindSettings({
                         ? {
                           ...b,
                           input: option,
+                          output: b.type === "mash_trigger" ? option : b.output
                         }
                         : b,
                     );
@@ -360,9 +363,12 @@ function KeybindSettings({
               </td>
               <td className="flex justify-center gap-2.5 px-0 py-2">
                 <button
-                  onClick={() =>
-                    setBinds(binds.filter((b) => b.id !== bind.id))
-                  }
+                  onClick={() => {
+                    if (bind.type === "mash_trigger")
+                      setBinds(binds.filter(b => b.type !== "mash_trigger"));
+                    else
+                      setBinds(binds.filter(b => b.id !== bind.id));
+                  }}
                   className="rounded bg-rose-700 px-4 py-2 font-bold text-white hover:bg-rose-500"
                 >
                   <svg
@@ -403,7 +409,7 @@ function KeybindSettings({
             >
               +
               <Dropdown
-                options={["Keyboard", "Controller", "SOCD"]}
+                options={binds.find(b => b.type === "mash_trigger") ? ["Keyboard", "Controller", "SOCD"] : ["Keyboard", "Controller", "SOCD", "Mash_Trigger"]}
                 onChange={(option) => {
                   const type = option.toLowerCase() as BindType;
                   if (type === "socd") {
@@ -427,6 +433,29 @@ function KeybindSettings({
                       [bindsCount, bindsCount + 1],
                     ]);
                     setBindsCount(bindsCount + 2);
+                  } else if (type === "mash_trigger") {
+                    setBinds([
+                      ...binds,
+                      {
+                        id: bindsCount,
+                        input: "",
+                        type,
+                        output: "",
+                      },
+                      {
+                        id: bindsCount + 1,
+                        input: "",
+                        type,
+                        output: "",
+                      },
+                      {
+                        id: bindsCount + 2,
+                        input: "",
+                        type,
+                        output: "",
+                      },
+                    ]);
+                    setBindsCount(bindsCount + 3);
                   } else {
                     setBinds([
                       ...binds,
