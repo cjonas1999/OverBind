@@ -295,7 +295,7 @@ fn get_imgui_context() -> &'static mut imgui::Context {
                 ..Default::default()
             };
 
-            let font_data = include_bytes!("../icons/IconFont.ttf");
+            let font_data = include_bytes!("../../../src-tauri/icons/IconFont.ttf");
             fonts.add_font(&[imgui::FontSource::TtfData {
                 data: font_data,
                 size_pixels: 64.0,
