@@ -142,6 +142,8 @@ function KeybindSettings({
     y: 0,
   });
 
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       console.log("Keydown event", event);
@@ -220,8 +222,12 @@ function KeybindSettings({
   };
 
   return (
+    <>
     <div className="p-4 text-white">
-      <h1 className="mb-4 text-lg font-bold">Edit Keybinds</h1>
+      <span className="flex flex-row justify-center mb-4 gap-2">
+        <h1 className="mb-0 text-lg font-bold">Edit Keybinds</h1>
+        <div className="cursor-pointer" onClick={() => setInfoModalOpen(true)}>ℹ️</div>
+      </span>
       <table className="mb-4 w-full table-auto">
         <thead>
           <tr className="bg-indigo-950 bg-opacity-60">
@@ -495,6 +501,66 @@ function KeybindSettings({
         </button>
       </div>
     </div>
+    {infoModalOpen && (
+      <div className="fixed inset-0 size-auto max-h-none max-w-none overflow-y-auto bg-transparent backdrop:bg-transparent">
+        <div className="fixed inset-0 bg-gray-900/50 transition-opacity data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in"></div>
+        <div className="flex min-h-full items-end justify-center p-4 text-center focus:outline-none sm:items-center sm:p-0">
+          <div className="relative transform overflow-hidden rounded-lg bg-gray-800 text-left shadow-xl transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-lg data-closed:sm:translate-y-0 data-closed:sm:scale-95">
+            <div className="bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+              <div className="sm:flex sm:items-start">
+                <div className="mx-auto flex size-12 shrink-0 items-center justify-center rounded-full bg-red-500/10 sm:mx-0 sm:size-10">
+                </div>
+                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                  <h3 id="dialog-title" className="text-base font-semibold text-white">Edit Keybinds Info</h3>
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-200">
+                      There are four different types of binds that OverBind currently supports:
+                      <br/>
+                      <br/>
+                      <ul style={{ listStyle: "disc" }}>
+                        <li>
+                          <div className="flex flex-row gap-2 items-center"><h3>Keyboard</h3><InputTypeIcon type={"keyboard"}/></div>
+                          <p>
+                            Allows you to map one keyboard key to another. Note that the input key is on the RIGHT and the output key is on the LEFT.
+                          </p>
+                        </li>
+                        <li>
+                          <div className="flex flex-row gap-2 items-center"><h3>Controller</h3><InputTypeIcon type={"controller"}/></div>
+                          <p>
+                            Allows you to map one keyboard key to a controller button or trigger. Selected triggers will be pressed all the way when the input key is pressed. Joystick directions will be pressed 89% to the edge of the
+                            specified direction (some apps do not behave correctly with 100% joystick directions). Note that Overbind is not capable of using a controller button as an input.
+                          </p>
+                        </li>
+                        <li>
+                          <div className="flex flex-row gap-2 items-center"><h3>SOCD</h3><InputTypeIcon type={"socd"}/></div>
+                          <p>
+                            Allows you to specify opposing cardinal direction keys for last pressed override during simultaneous presses. What this effectively means is that when left and right arrow keys are mapped
+                            holding left and then pressing right will cause the left arrow key to be unpressed while the right arrow key is being held. In many games having both arrow keys pressed will be registered
+                            as no direction and cause you to stand still. With SOCD cleaning, whatever direction you last pressed will be the direction you move. Requires two inputs to be specified, each overriding the other.
+                          </p>
+                        </li>
+                        <li>
+                          <div className="flex flex-row gap-2 items-center"><h3>Mash_Trigger</h3><InputTypeIcon type={"mash_trigger"}/></div>
+                          <p>
+                            [ONLY FOR HOLLOW KNIGHT] Allows you to specify the three buttons used for text mashing. Please map these keys to your focus, nail, and jump keys for this to work properly.
+                            When you encounter a text box, holding all three buttons will trigger the automasher to mash through the text box for you. Please make sure you have the .DLL (windows) or .SO (linux)
+                            to enable the masher, you will know it's working if you see the mash trigger icon in the top left corner of your game. The text masher will not work without it.
+                          </p>
+                        </li>
+                      </ul>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-gray-700/25 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+              <button type="button" onClick={() => setInfoModalOpen(false)} className="mt-3 inline-flex w-full justify-center rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white inset-ring inset-ring-white/5 hover:bg-white/20 sm:mt-0 sm:w-auto">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
