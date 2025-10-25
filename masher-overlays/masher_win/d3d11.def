@@ -1,0 +1,4 @@
+LIBRARY d3d11
+EXPORTS
+    D3D11CreateDevice = C:\Windows\System32\d3d11.D3D11CreateDevice
+    D3D11CreateDeviceAndSwapChain = C:\Windows\System32\d3d11.D3D11CreateDeviceAndSwapChain

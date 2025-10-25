@@ -4,13 +4,15 @@ use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::{cmp, thread};
 use vigem_client::Client;
-use windows::core::PWSTR;
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HWND};
 use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_INFORMATION,
@@ -32,7 +34,7 @@ use windows::Win32::{
         WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
     },
 };
-
+use windows::Win32::Storage::FileSystem::{CreateFileW, FlushFileBuffers, WriteFile, FILE_GENERIC_WRITE, FILE_SHARE_READ, OPEN_EXISTING, SECURITY_ANONYMOUS};
 use crate::key_interceptor::KeyInterceptorTrait;
 use crate::text_masher::{text_masher, SHOULD_TERMINATE_MASHER, IS_MASHER_ACTIVE, MAX_MASHING_KEY_COUNT};
 use crate::{get_config_path, Settings};
@@ -201,31 +203,35 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         self.should_run.store(true, Ordering::SeqCst);
 
         if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
-            info!("SPAWNING MASHER THREAD");
-
-            thread::spawn(|| {
-                text_masher(|key_to_press| {
-                    if key_to_press > MAX_MASHING_KEY_COUNT {
-                        for keycode in MASHING_KEYS.read().unwrap().iter() {
-                            let _ = send_key_press(*keycode, false).map_err(|e| {
-                                error!("Error releasing key {:?}", e);
-                            });
-                        }
-                    } else {
-                        for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
-                            if (i as u8) == key_to_press {
-                                let _ = send_key_press(*keycode, true).map_err(|e| {
-                                    error!("Error pressing key {:?}", e);
-                                });
-
+            if toggle_masher_overlay(false).is_ok() {
+                info!("SPAWNING MASHER THREAD");
+                thread::spawn(|| {
+                    text_masher(|key_to_press| {
+                        if key_to_press > MAX_MASHING_KEY_COUNT {
+                            for keycode in MASHING_KEYS.read().unwrap().iter() {
                                 let _ = send_key_press(*keycode, false).map_err(|e| {
                                     error!("Error releasing key {:?}", e);
                                 });
                             }
+                        } else {
+                            for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
+                                if (i as u8) == key_to_press {
+                                    let _ = send_key_press(*keycode, true).map_err(|e| {
+                                        error!("Error pressing key {:?}", e);
+                                    });
+
+                                    let _ = send_key_press(*keycode, false).map_err(|e| {
+                                        error!("Error releasing key {:?}", e);
+                                    });
+                                }
+                            }
                         }
-                    }
+                    }, 
+                    toggle_masher_overlay);
                 });
-            });
+            } else {
+                error!("Failed to find masher overlay, please make sure game is running with d3d11.dll added to game exe directory");
+            }
         } else {
             info!("Not spawning masher thread, wrong number of mashing keys found.");
         }
@@ -392,6 +398,44 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         let shared_state = SHARED_STATE.read().unwrap();
         shared_state.hook_handle.is_some() || shared_state.window_hook_handle.is_some()
     }
+}
+
+fn toggle_masher_overlay(active: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut command = None;
+    if active {
+        debug!("Showing masher overlay");
+        command = Some("masher_active");
+    } else {
+        debug!("Hiding masher overlay");
+        command = Some("masher_inactive");
+    }
+    let pipe_name = r"\\.\pipe\masher_overlay";
+    let name_w: Vec<u16> = OsStr::new(pipe_name).encode_wide().chain(std::iter::once(0)).collect();
+
+    unsafe {
+        let handle = CreateFileW(
+            PCWSTR(name_w.as_ptr()),
+            FILE_GENERIC_WRITE.0,
+            FILE_SHARE_READ,
+            None,
+            OPEN_EXISTING,
+            SECURITY_ANONYMOUS,
+            None,
+        )?;
+
+        let mut written = 0u32;
+        WriteFile(
+            handle,
+            Some(command.unwrap().as_bytes()),
+            Some(&mut written as *mut u32),
+            None,
+        )?;
+
+        let _ = FlushFileBuffers(handle);
+        let _ = CloseHandle(handle);
+    }
+
+    Ok(())
 }
 
 fn send_key_press(keycode: u32, is_keydown: bool) -> Result<(), windows::core::Error> {

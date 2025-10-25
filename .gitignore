@@ -391,3 +391,4 @@ dist-ssr
 # Added by cargo
 
 /target
+masher-overlays/*/target

@@ -1,0 +1,40 @@
+[package]
+name = "masher_win"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+windows = { version = "0.36", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_UI",
+    "Win32_System_Memory",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_Graphics_Dxgi", 
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Pipes",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_IO"
+] }
+widestring = "1.2.1"
+minhook-sys = "0.1"
+imgui = "0.8"
+imgui-dx11-renderer = "0.8.0"
+ctor = "0.6"
+
+[package.metadata.cargo-xbuild] # optional for older cargo setups
+def_file = "d3d11.def"
+
+[patch.crates-io]
+imgui-dx11-renderer = { path = "vendor/imgui-dx11-renderer" }

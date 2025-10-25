@@ -1,3 +1,5 @@
+#![cfg(target_os = "linux")]
+
 use ctor::ctor;
 use libc::{c_char, c_void, RTLD_DEFAULT, RTLD_NEXT};
 use once_cell::sync::OnceCell;
@@ -355,7 +357,6 @@ unsafe fn try_init_renderer_if_ready(ov: &mut Overlay, ctx: &mut imgui::Context)
     true
 }
 
-/// Very basic stub: just logs that we were called.
 pub unsafe fn render_imgui_for_current_context() {
     with_overlay(|ctx, ov| {
         // lazy-create renderer when a valid GL context is current

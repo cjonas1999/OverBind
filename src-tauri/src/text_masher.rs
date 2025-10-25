@@ -181,8 +181,8 @@ pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> R
                         if IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
                             do_key_event(100);// release keys
                             while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                if toggle_overlay(true).is_err() {
-                                    log::error!("Failed to toggle masher overlay");
+                                if let Some(err) = toggle_overlay(true).err() {
+                                    log::error!("Failed to toggle masher overlay: {}", err);
                                     break;
                                 }
                                 log::debug!("Trigger do key event: {}", key_to_press);
@@ -199,6 +199,8 @@ pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> R
                             do_key_event(100);
                             let _ = toggle_overlay(false);
                         }
+                    } else {
+                        log::debug!("dialogue box not found");
                     }
                 }
             }
