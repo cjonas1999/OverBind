@@ -425,34 +425,29 @@ impl KeyInterceptorTrait for LinuxKeyInterceptor {
         SHOULD_RUN.store(true, Ordering::SeqCst);
 
         if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
-            if toggle_masher_overlay(false).is_ok() {
-                info!("SPAWNING MASHER THREAD");
-                thread::spawn(|| {
-                    text_masher(
-                        |key_to_press| {
-                            if key_to_press > MAX_MASHING_KEY_COUNT {
-                                for keycode in MASHING_KEYS.read().unwrap().iter() {
+            info!("SPAWNING MASHER THREAD");
+            thread::spawn(|| {
+                text_masher(
+                    |key_to_press| {
+                        if key_to_press > MAX_MASHING_KEY_COUNT {
+                            for keycode in MASHING_KEYS.read().unwrap().iter() {
+                                send_keyboard_event(*keycode, false);
+                                sync_keyboard();
+                            }
+                        } else {
+                            for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
+                                if (i as u8) == key_to_press {
+                                    send_keyboard_event(*keycode, true);
+                                    sync_keyboard();
                                     send_keyboard_event(*keycode, false);
                                     sync_keyboard();
                                 }
-                            } else {
-                                for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate()
-                                {
-                                    if (i as u8) == key_to_press {
-                                        send_keyboard_event(*keycode, true);
-                                        sync_keyboard();
-                                        send_keyboard_event(*keycode, false);
-                                        sync_keyboard();
-                                    }
-                                }
                             }
-                        },
-                        toggle_masher_overlay,
-                    );
-                });
-            } else {
-                error!("Failed to find masher overlay, please make sure game is running with libmasher.so loaded on the LD_PRELOAD environment variable");
-            }
+                        }
+                    },
+                    toggle_masher_overlay,
+                );
+            });
         } else {
             info!("Not spawning masher thread, wrong number of mashing keys found. Found {} keys, max allowed is {}", MASHING_KEYS.read().unwrap().len(), MAX_MASHING_KEY_COUNT);
         }

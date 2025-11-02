@@ -144,65 +144,71 @@ pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> R
                     if res.is_err() {
                         log::error!("Failed to toggle masher overlay");
                     }
+                    log::info!("Breaking mainloop in masher thread");
                     break 'mainloop
                 }
-
-                let Ok(module_address) = process.get_module_address(config.module_name) else {
-                    log::info!("Cannot attach to base module address");
-                    break;
-                };
-
-                let base: Address = module_address + config.base_offset;
-                let dialogue_box_opt = resolve_pointer_chain(
-                                &process,
-                                base,
-                                &config.pointer_chain,
-                                PointerSize::Bit64,
-                            );
-                            
-                            let input_pointer: UnityPointer<3> = UnityPointer::new(
-                                "GameManager",
-                    0,
-                    &[
-                        "_instance",
-                        "<inputHandler>k__BackingField",
-                        "acceptingInput",
-                        ],
-                    );
-                let accepting_input: bool = input_pointer
-                .deref(&process, &module, &image)
-                .unwrap_or_default();
                 
-                if accepting_input && IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
-                    if let Some(dialogue_box_addr) = dialogue_box_opt {
-                        let mut next_time = Instant::now() + target_interval;
-                        let mut key_to_press = 0;
+                if IS_MASHER_ACTIVE.load(Ordering::SeqCst) {
+                    if let Some(err) = toggle_overlay(false).err() {
+                        log::error!("Failed to toggle masher overlay: {}", err);
+                        continue;
+                    }
+                    let Ok(module_address) = process.get_module_address(config.module_name) else {
+                        log::info!("Cannot attach to base module address");
+                        break;
+                    };
 
-                        if IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                            do_key_event(100);// release keys
-                            while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
-                                if let Some(err) = toggle_overlay(true).err() {
-                                    log::error!("Failed to toggle masher overlay: {}", err);
-                                    break;
-                                }
-                                log::debug!("Trigger do key event: {}", key_to_press);
-                                do_key_event(key_to_press);
-                                key_to_press = (key_to_press + 1) % MAX_MASHING_KEY_COUNT;
+                    let base: Address = module_address + config.base_offset;
+                    let dialogue_box_opt = resolve_pointer_chain(
+                                    &process,
+                                    base,
+                                    &config.pointer_chain,
+                                    PointerSize::Bit64,
+                                );
+                                
+                                let input_pointer: UnityPointer<3> = UnityPointer::new(
+                                    "GameManager",
+                        0,
+                        &[
+                            "_instance",
+                            "<inputHandler>k__BackingField",
+                            "acceptingInput",
+                            ],
+                        );
 
-                                // Calculate and wait for next interval
-                                let now = Instant::now();
-                                next_time += target_interval;
-                                if next_time > now {
-                                    sleep(next_time - now);
+                    let accepting_input: bool = input_pointer
+                    .deref(&process, &module, &image)
+                    .unwrap_or_default();
+
+                    if accepting_input {
+                        if let Some(dialogue_box_addr) = dialogue_box_opt {
+                            let mut next_time = Instant::now() + target_interval;
+                            let mut key_to_press = 0;
+
+                            if IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                                do_key_event(100);// release keys
+                                while IS_MASHER_ACTIVE.load(Ordering::SeqCst) && matches!(process.read::<u8>(dialogue_box_addr + 0x2E), Ok(is_dialogue_hidden) if is_dialogue_hidden == 0) {
+                                    let _ = toggle_overlay(true);
+                                    log::debug!("Trigger do key event: {}", key_to_press);
+                                    do_key_event(key_to_press);
+                                    key_to_press = (key_to_press + 1) % MAX_MASHING_KEY_COUNT;
+
+                                    // Calculate and wait for next interval
+                                    let now = Instant::now();
+                                    next_time += target_interval;
+                                    if next_time > now {
+                                        sleep(next_time - now);
+                                    }
                                 }
+                                do_key_event(100);
+                                let _ = toggle_overlay(false);
                             }
-                            do_key_event(100);
-                            let _ = toggle_overlay(false);
+                        } else {
+                            log::debug!("dialogue box not found");
                         }
-                    } else {
-                        log::debug!("dialogue box not found");
                     }
                 }
+                sleep(Duration::from_millis(100));
             }
         });
     }
