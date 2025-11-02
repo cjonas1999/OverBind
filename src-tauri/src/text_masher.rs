@@ -11,7 +11,7 @@ use std::{thread::sleep, time::Duration};
 
 pub const MAX_MASHING_KEY_COUNT: u8 = 3;
 
-const TARGET_RATE: f64 = 36.0;
+const TARGET_RATE: f64 = 37.0;
 pub static IS_MASHER_ACTIVE: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 pub static SHOULD_TERMINATE_MASHER: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
 
