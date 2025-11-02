@@ -18,7 +18,7 @@ use std::ptr;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -110,6 +110,8 @@ static ORIG_GLDRAWARRAYS: OnceCell<Sym> = OnceCell::new();
 
 static ORIG_EGL_GETPROCADDRESS: OnceCell<Sym> = OnceCell::new();
 
+static FRAME_RENDERED: AtomicBool = AtomicBool::new(false);
+
 unsafe fn init_orig_egl_getprocaddress() {
     if ORIG_EGL_GETPROCADDRESS.get().is_none() {
         // Try common names
@@ -185,8 +187,7 @@ unsafe extern "C" fn glClear_proxy(mask: u32) {
         return;
     }
     log("glClear_proxy");
-    // draw overlay (your function should guard context etc.)
-    render_imgui_for_current_context();
+    FRAME_RENDERED.store(false, Ordering::SeqCst);
     // call original
     if let Some(sym) = ORIG_GLCLEAR.get() {
         if !sym.0.is_null() {
@@ -206,7 +207,9 @@ unsafe extern "C" fn glDrawElements_proxy(mode: u32, count: i32, ty: u32, indice
         return;
     }
     log("glDrawElements_proxy");
-    render_imgui_for_current_context();
+    if !FRAME_RENDERED.swap(true, Ordering::SeqCst) {
+        render_imgui_for_current_context();
+    }
     if let Some(sym) = ORIG_GLDRAWELEMENTS.get() {
         if !sym.0.is_null() {
             let orig: extern "C" fn(u32, i32, u32, *const c_void) = mem::transmute(sym.0);
@@ -280,6 +283,11 @@ thread_local! {
 
 static mut GLOBAL_CTX: Option<NonNull<imgui::Context>> = None;
 static INIT: Once = Once::new();
+static GL_GET_INTEGERV: OnceLock<extern "C" fn(u32, *mut i32)> = OnceLock::new();
+
+unsafe fn get_gl_get_integerv() -> extern "C" fn(u32, *mut i32) {
+    *GL_GET_INTEGERV.get_or_init(|| std::mem::transmute(renderer_gl_loader("glGetIntegerv")))
+}
 
 fn get_imgui_context() -> &'static mut imgui::Context {
     unsafe {
@@ -367,8 +375,7 @@ pub unsafe fn render_imgui_for_current_context() {
         }
 
         // Resolve glGetIntegerv
-        let gl_get: extern "C" fn(u32, *mut i32) =
-            std::mem::transmute(renderer_gl_loader("glGetIntegerv"));
+        let gl_get = get_gl_get_integerv();
 
         // 4 ints: x, y, width, height
         let mut vp = [0i32; 4];
@@ -403,12 +410,17 @@ pub unsafe fn render_imgui_for_current_context() {
     });
 }
 
+#[cfg(debug_assertions)]
 fn log(msg: &str) {
-    //return;
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open("/tmp/masher.log")
         .and_then(|mut f| writeln!(f, "{}", msg))
         .ok();
+}
+
+#[cfg(not(debug_assertions))]
+fn log(_msg: &str) {
+    // No-op in release
 }
