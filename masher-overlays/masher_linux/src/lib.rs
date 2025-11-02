@@ -32,7 +32,7 @@ fn start_socket_thread() {
             log(&msg);
         }));
 
-        let socket_path = "/tmp/masher_overlay.sock";
+        let socket_path = "/tmp/masher_overlay_2.0.1-beta.sock";
         if Path::new(socket_path).exists() {
             if std::os::unix::net::UnixStream::connect(socket_path).is_ok() {
                 log("Existing socket is live — keeping current listener");
@@ -282,6 +282,8 @@ thread_local! {
 }
 
 static mut GLOBAL_CTX: Option<NonNull<imgui::Context>> = None;
+static mut DEFAULT_FONT: Option<imgui::FontId> = None;
+static mut ICON_FONT: Option<imgui::FontId> = None;
 static INIT: Once = Once::new();
 static GL_GET_INTEGERV: OnceLock<extern "C" fn(u32, *mut i32)> = OnceLock::new();
 
@@ -298,17 +300,25 @@ fn get_imgui_context() -> &'static mut imgui::Context {
 
             let fonts = ctx.fonts();
 
-            let font_cfg = imgui::FontConfig {
-                size_pixels: 64.0,
-                ..Default::default()
-            };
-
+            let default_font = fonts.add_font(&[imgui::FontSource::DefaultFontData {
+                config: Some(imgui::FontConfig {
+                    size_pixels: 12.0,
+                    ..Default::default()
+                }),
+            }]);
             let font_data = include_bytes!("../../../src-tauri/icons/IconFont.ttf");
-            fonts.add_font(&[imgui::FontSource::TtfData {
+            let icon_font = fonts.add_font(&[imgui::FontSource::TtfData {
                 data: font_data,
                 size_pixels: 64.0,
-                config: Some(font_cfg),
+                config: Some(imgui::FontConfig {
+                    size_pixels: 64.0,
+                    ..Default::default()
+                }),
             }]);
+
+            DEFAULT_FONT = Some(default_font);
+            ICON_FONT = Some(icon_font);
+
             ctx.fonts().build_rgba32_texture();
 
             GLOBAL_CTX = Some(NonNull::new_unchecked(Box::leak(Box::new(ctx))));
@@ -399,8 +409,15 @@ pub unsafe fn render_imgui_for_current_context() {
                 imgui::ImColor32::from_rgba(100, 100, 100, 150) // dim gray
             };
 
-            // Pick a font (optional — default font will work if it contains the glyph)
-            draw_list.add_text([20.0, 60.0], color, " ");
+            if let Some(font) = ICON_FONT {
+                let _font_token = ui.push_font(font);
+                draw_list.add_text([20.0, 60.0], color, "X");
+            }
+
+            if let Some(font) = DEFAULT_FONT {
+                let _font_token = ui.push_font(font);
+                draw_list.add_text([20.0, 100.0], color, "v2.0.1-beta");
+            }
         }
 
         if let Some(renderer) = ov.renderer.as_mut() {
