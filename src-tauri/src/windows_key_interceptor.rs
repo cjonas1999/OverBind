@@ -409,7 +409,7 @@ fn toggle_masher_overlay(active: bool) -> Result<(), Box<dyn std::error::Error>>
         debug!("Hiding masher overlay");
         command = Some("masher_inactive");
     }
-    let pipe_name = r"\\.\pipe\masher_overlay";
+    let pipe_name = r"\\.\pipe\masher_overlay_v2.0.1-beta";
     let name_w: Vec<u16> = OsStr::new(pipe_name).encode_wide().chain(std::iter::once(0)).collect();
 
     unsafe {
