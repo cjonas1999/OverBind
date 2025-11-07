@@ -126,15 +126,15 @@ impl Renderer {
                 self.index_buffer =
                     Self::create_index_buffer(&self.device, draw_data.total_idx_count as usize)?;
             }
-            // let ctx_clone = self.context.clone();
+            let ctx_clone = self.context.clone();
         
-            // let _state_guard = StateBackup::backup(Some(ctx_clone));
+            let _state_guard = StateBackup::backup(Some(ctx_clone));
         
 
             self.write_buffers(draw_data)?;
             self.setup_render_state(draw_data);
             self.render_impl(draw_data)?;
-            // _state_guard.restore();
+            _state_guard.restore();
         
         }
         Ok(())
@@ -445,7 +445,7 @@ impl Renderer {
         };
         let desc = D3D11_DEPTH_STENCIL_DESC {
             DepthEnable: false.into(),
-            DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ALL,
+            DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ZERO,
             DepthFunc: D3D11_COMPARISON_ALWAYS,
             StencilEnable: false.into(),
             StencilReadMask: 0,
@@ -475,21 +475,19 @@ impl Buffer {
 #[derive(Debug, Default)]
 struct StateBackup {
     context: Option<ID3D11DeviceContext>,
-    scissor_rects: RECT,
-    viewports: D3D11_VIEWPORT,
     rasterizer_state: Option<ID3D11RasterizerState>,
     blend_state: Option<ID3D11BlendState>,
-    blend_factor: f32,
+    blend_factor: [f32; 4],
     sample_mask: u32,
     depth_stencil_state: Option<ID3D11DepthStencilState>,
     stencil_ref: u32,
-    shader_resource: Vec<Option<ID3D11ShaderResourceView>>,
-    sampler: Vec<Option<ID3D11SamplerState>>,
+    rtvs: [Option<ID3D11RenderTargetView>; 8],
+    dsv: Option<ID3D11DepthStencilView>,
+    shader_resource: [Option<ID3D11ShaderResourceView>; 8],
+    sampler: [Option<ID3D11SamplerState>; 8],
     ps_shader: Option<ID3D11PixelShader>,
-    ps_instances: Option<ID3D11ClassInstance>,
     vs_shader: Option<ID3D11VertexShader>,
-    vs_instances: Option<ID3D11ClassInstance>,
-    constant_buffer: Vec<Option<ID3D11Buffer>>,
+    constant_buffer: [Option<ID3D11Buffer>; 8],
     gs_shader: Option<ID3D11GeometryShader>,
     gs_instances: Option<ID3D11ClassInstance>,
     index_buffer: Option<ID3D11Buffer>,
@@ -500,78 +498,81 @@ struct StateBackup {
     vertex_buffer_stride: u32,
     topology: D3D_PRIMITIVE_TOPOLOGY,
     input_layout: Option<ID3D11InputLayout>,
+    active_rt_count: u32,
 }
 
 impl StateBackup {
     unsafe fn backup(context: Option<ID3D11DeviceContext>) -> Self {
-        let mut result = Self::default();
-
         let ctx = context.as_ref().unwrap();
-        ctx.RSGetScissorRects(&mut 16, &mut result.scissor_rects);
-        ctx.RSGetViewports(&mut 16, &mut result.viewports);
-        ctx.RSGetState(&mut result.rasterizer_state);
-        ctx.OMGetBlendState(
-            &mut result.blend_state,
-            &mut result.blend_factor,
-            &mut result.sample_mask,
-        );
-        ctx.OMGetDepthStencilState(&mut result.depth_stencil_state, &mut result.stencil_ref);
-        ctx.PSGetShaderResources(0, &mut result.shader_resource);
-        ctx.PSGetSamplers(0, &mut result.sampler);
-        ctx.PSGetShader(&mut result.ps_shader, &mut result.ps_instances, &mut 256);
-        ctx.VSGetShader(&mut result.vs_shader, &mut result.vs_instances, &mut 256);
-        ctx.VSGetConstantBuffers(0, &mut result.constant_buffer);
-        ctx.GSGetShader(&mut result.gs_shader, &mut result.gs_instances, &mut 256);
-        ctx.IAGetPrimitiveTopology(&mut result.topology);
-        ctx.IAGetIndexBuffer(
-            &mut result.index_buffer,
-            &mut result.index_buffer_format,
-            &mut result.index_buffer_offset,
-        );
-        ctx.IAGetVertexBuffers(
-            0,
-            1,
-            &mut result.vertex_buffer,
-            &mut result.vertex_buffer_stride,
-            &mut result.vertex_buffer_offset,
-        );
-        ctx.IAGetInputLayout(&mut result.input_layout);
-        result.context = context;
-        result
+        let mut s = StateBackup::default();
+        ctx.RSGetState(&mut s.rasterizer_state);
+        ctx.OMGetBlendState(&mut s.blend_state, s.blend_factor.as_mut_ptr(), &mut s.sample_mask);
+        ctx.OMGetDepthStencilState(&mut s.depth_stencil_state, &mut s.stencil_ref);
+        let active_rt_count: u32 = 1;
+        ctx.OMGetRenderTargets(&mut s.rtvs[..active_rt_count as usize], &mut s.dsv);
+        s.active_rt_count = active_rt_count;
+        for i in 0..8 {
+            let mut one = [None];
+            ctx.PSGetShaderResources(i, &mut one);
+            s.shader_resource[i as usize] = one[0].take();
+        }
+        for i in 0..8 {
+            let mut one = [None];
+            ctx.PSGetSamplers(i,&mut one);
+            s.sampler[i as usize] = one[0].take();
+        }
+        let mut ps_shader = None;
+        ctx.PSGetShader(&mut ps_shader, &mut None, &mut 0);
+        s.ps_shader = ps_shader;
+        let mut vs_shader = None;
+        ctx.VSGetShader(&mut vs_shader, &mut None, &mut 0);
+        s.vs_shader = vs_shader;
+        for i in 0..8 {
+            let mut one = [None];
+            ctx.VSGetConstantBuffers(i,&mut one);
+            s.constant_buffer[i as usize] = one[0].take();
+        }
+        ctx.GSGetShader(&mut s.gs_shader, &mut s.gs_instances, &mut 256);
+        ctx.IAGetPrimitiveTopology(&mut s.topology);
+        ctx.IAGetIndexBuffer(&mut s.index_buffer, &mut s.index_buffer_format, &mut s.index_buffer_offset);
+        ctx.IAGetVertexBuffers(0, 1, &mut s.vertex_buffer, &mut s.vertex_buffer_stride, &mut s.vertex_buffer_offset);
+        ctx.IAGetInputLayout(&mut s.input_layout);
+        s.context = context;
+        s
     }
-    pub fn restore(mut self) {
+
+    pub fn restore(self) {
         unsafe {
             let ctx = self.context.as_ref().unwrap();
-            let inst =
-                if self.ps_instances.is_some() { vec![self.ps_instances.take()] } else { vec![] };
-            let vinst =
-                if self.vs_instances.is_some() { vec![self.vs_instances.take()] } else { vec![] };
-
-            ctx.RSSetScissorRects(&[self.scissor_rects]);
-            ctx.RSSetViewports(&[self.viewports]);
             ctx.RSSetState(&self.rasterizer_state);
-            ctx.OMSetBlendState(&self.blend_state, &self.blend_factor, 0xFFFFFFFF);
+            ctx.OMSetBlendState(&self.blend_state, self.blend_factor.as_ptr(), self.sample_mask);
             ctx.OMSetDepthStencilState(&self.depth_stencil_state, self.stencil_ref);
-            ctx.PSSetShaderResources(0, &self.shader_resource);
-            ctx.PSSetSamplers(0, &self.sampler);
-            ctx.PSSetShader(self.ps_shader, &inst);
-            ctx.VSSetShader(self.vs_shader, &vinst);
-            ctx.VSSetConstantBuffers(0, &self.constant_buffer);
+            ctx.OMSetRenderTargets(&self.rtvs[..self.active_rt_count as usize], &self.dsv);
+            for i in 0..8 {
+                let mut one = [self.shader_resource[i].clone()];
+                ctx.PSSetShaderResources(i as u32, &mut one);
+            }
+            for i in 0..8 {
+                let mut one = [self.sampler[i].clone()];
+                ctx.PSSetSamplers(i as u32, &mut one);
+            }
+            ctx.PSSetShader(&self.ps_shader, &[]);
+            ctx.VSSetShader(&self.vs_shader, &[]);
+            for i in 0..8 {
+                let mut one = [self.constant_buffer[i].clone()];
+                ctx.VSSetConstantBuffers(i as u32, &mut one);
+            }
             ctx.GSSetShader(&self.gs_shader, &[]);
-            ctx.IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            ctx.IASetIndexBuffer(
-                &self.index_buffer,
-                self.index_buffer_format,
-                self.index_buffer_offset,
-            );
-            ctx.IASetVertexBuffers(
-                0,
-                1,
-                &self.vertex_buffer,
-                &self.vertex_buffer_stride,
-                &self.vertex_buffer_offset,
-            );
+            ctx.IASetPrimitiveTopology(self.topology);
+            ctx.IASetIndexBuffer(&self.index_buffer, self.index_buffer_format, self.index_buffer_offset);
+            ctx.IASetVertexBuffers(0, 1, &self.vertex_buffer, &self.vertex_buffer_stride, &self.vertex_buffer_offset);
             ctx.IASetInputLayout(&self.input_layout);
         }
+    }
+}
+
+fn dbg(msg: &str) {
+    if let Ok(w) = U16CString::from_str(msg) {
+        unsafe { OutputDebugStringW(PCWSTR(w.as_ptr())) }
     }
 }
