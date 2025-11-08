@@ -64,26 +64,43 @@ fn get_config(process_name: &str) -> Option<&'static HKConfig> {
     })
 }
 
-fn wait_attach(process: &Process) -> (mono::Module, mono::Image) {
+fn wait_attach_until_close<F, R>(f: F)
+where
+    F: Fn(&Process, &mono::Module, &mono::Image, &HKConfig) -> R,
+{
+    let process_opt = attach_hollow_knight();
+    if let None = process_opt {
+        sleep(std::time::Duration::from_millis(500));
+        return;
+    }
+
+    let (process, process_name) = process_opt.unwrap();
+    log::info!("Found Hollow Knight: {:?}", process_name);
+
+    let config = match get_config(process_name) {
+        Some(cfg) => cfg,
+        None => {
+            log::info!("No config found for {:?}", process_name);
+            return;
+        }
+    };
+
     let mut found_module = false;
-    let mut needed_retry = false;
     loop {
-        if let Some(module) = mono::Module::attach_auto_detect(process) {
+        if let Some(module) = mono::Module::attach_auto_detect(&process) {
             if !found_module {
                 found_module = true;
                 log::info!("GameManagerFinder wait_attach: module get_default_image...");
             }
             for _ in 0..0x10 {
-                if let Some(image) = module.get_default_image(process) {
+                if let Some(image) = module.get_default_image(&process) {
                     log::info!("GameManagerFinder wait_attach: got module and image");
-                    return (module, image);
+                    f(&process, &module, &image, &config);
                 }
             }
-            if !needed_retry {
-                needed_retry = true;
-                log::info!("GameManagerFinder wait_attach: retry...");
-            }
+            break;
         }
+        std::thread::sleep(std::time::Duration::from_millis(250));
     }
 }
 
@@ -117,27 +134,8 @@ pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> R
             break 'mainloop
         }
 
-        let process_opt = attach_hollow_knight();
-        if let None = process_opt {
-            sleep(target_interval);
-            continue;
-        }
-
-        let (process, process_name) = process_opt.unwrap();
-        log::info!("Found Hollow Knight: {:?}", process_name);
-
-        let config = match get_config(process_name) {
-            Some(cfg) => cfg,
-            None => {
-                log::info!("No config found for {:?}", process_name);
-                continue;
-            }
-        };
-
         log::info!("GameManagerFinder wait_attach...");
-        let _ = process.until_closes({
-            let (module, image) = wait_attach(&process);
-
+        let _ = wait_attach_until_close(|process, module, image, config| {
             loop {
                 if SHOULD_TERMINATE_MASHER.load(Ordering::SeqCst) {
                     let res = toggle_overlay(false);
@@ -145,7 +143,7 @@ pub fn text_masher(do_key_event: impl Fn(u8), toggle_overlay: impl Fn(bool) -> R
                         log::error!("Failed to toggle masher overlay");
                     }
                     log::info!("Breaking mainloop in masher thread");
-                    break 'mainloop
+                    return;
                 }
                 
                 if IS_MASHER_ACTIVE.load(Ordering::SeqCst) {

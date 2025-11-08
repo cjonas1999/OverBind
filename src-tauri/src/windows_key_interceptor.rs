@@ -203,35 +203,31 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
         self.should_run.store(true, Ordering::SeqCst);
 
         if MASHING_KEYS.read().unwrap().len() == MAX_MASHING_KEY_COUNT as usize {
-            if toggle_masher_overlay(false).is_ok() {
-                info!("SPAWNING MASHER THREAD");
-                thread::spawn(|| {
-                    text_masher(|key_to_press| {
-                        if key_to_press > MAX_MASHING_KEY_COUNT {
-                            for keycode in MASHING_KEYS.read().unwrap().iter() {
+            info!("SPAWNING MASHER THREAD");
+            thread::spawn(|| {
+                text_masher(|key_to_press| {
+                    if key_to_press > MAX_MASHING_KEY_COUNT {
+                        for keycode in MASHING_KEYS.read().unwrap().iter() {
+                            let _ = send_key_press(*keycode, false).map_err(|e| {
+                                error!("Error releasing key {:?}", e);
+                            });
+                        }
+                    } else {
+                        for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
+                            if (i as u8) == key_to_press {
+                                let _ = send_key_press(*keycode, true).map_err(|e| {
+                                    error!("Error pressing key {:?}", e);
+                                });
+
                                 let _ = send_key_press(*keycode, false).map_err(|e| {
                                     error!("Error releasing key {:?}", e);
                                 });
                             }
-                        } else {
-                            for (i, keycode) in MASHING_KEYS.read().unwrap().iter().enumerate() {
-                                if (i as u8) == key_to_press {
-                                    let _ = send_key_press(*keycode, true).map_err(|e| {
-                                        error!("Error pressing key {:?}", e);
-                                    });
-
-                                    let _ = send_key_press(*keycode, false).map_err(|e| {
-                                        error!("Error releasing key {:?}", e);
-                                    });
-                                }
-                            }
                         }
-                    }, 
-                    toggle_masher_overlay);
-                });
-            } else {
-                error!("Failed to find masher overlay, please make sure game is running with d3d11.dll added to game exe directory");
-            }
+                    }
+                }, 
+                toggle_masher_overlay);
+            });
         } else {
             info!("Not spawning masher thread, wrong number of mashing keys found.");
         }

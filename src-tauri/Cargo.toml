@@ -27,7 +27,7 @@ tauri-plugin-fs = "2.2.0"
 dirs = "5.0.1"
 chrono = "0.4.39"
 tauri-plugin-log = "2.2.0"
-asr = { git = "https://github.com/AlexKnauth/asr", branch = "mono-5-split-index", features = [
+asr = { git = "https://github.com/AlexKnauth/asr", branch = "master", features = [
     "alloc", # Working with allocations.
     "derive", # Defining your own settings structs, converting endianness, and binding to .NET classes.
     "integer-vars", # Setting integer variables.
