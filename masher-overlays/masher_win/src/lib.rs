@@ -83,6 +83,7 @@ static REAL_D3D11: AtomicIsize = AtomicIsize::new(0);
 static MH_INIT_DONE: AtomicBool = AtomicBool::new(false);
 static HOOKS_INSTALLED_FOR_D3D: AtomicBool = AtomicBool::new(false);
 static PRESENT_HOOKED: AtomicBool = AtomicBool::new(false);
+static mut LAST_VIEWPORT: D3D11_VIEWPORT = unsafe {std::mem::zeroed()};
 
 unsafe fn borrow_device() -> Option<&'static windows::Win32::Graphics::Direct3D11::ID3D11Device> {
     if RAW_DEVICE.is_null() {
@@ -108,17 +109,22 @@ unsafe fn wrap_swapchain_from_raw(raw: *mut std::ffi::c_void) -> ManuallyDrop<ID
     ManuallyDrop::new(sc) // prevent Drop => no Release
 }
 
-static FRAME_COUNT: AtomicU32 = AtomicU32::new(0);
+fn get_viewport_size(ctx: &ID3D11DeviceContext) -> (f32, f32) {
+    unsafe {
+        let mut vp = LAST_VIEWPORT;
+        let mut count = 1u32;
+        ctx.RSGetViewports(&mut count, &mut vp);
+        if vp.Width != LAST_VIEWPORT.Width || vp.Height != LAST_VIEWPORT.Height {
+            LAST_VIEWPORT = vp;
+        }
+        (LAST_VIEWPORT.Width, LAST_VIEWPORT.Height)
+    }
+}
+
 // Our Present hook (matching IDXGISwapChain::Present signature)
 extern "system" fn my_present(this: *mut core::ffi::c_void, sync: u32, flags: u32) -> HRESULT {
     unsafe {
         if RAW_DEVICE.is_null() || RAW_DEVICE_CTX.is_null() || RAW_SWAPCHAIN.is_null() {
-            return call_original_present(this, sync, flags);
-        }
-        //dbg("DEVICE, CTX, and SWAPCHAIN all ready");
-
-        let n = FRAME_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-        if n < 200 {
             return call_original_present(this, sync, flags);
         }
 
@@ -180,14 +186,7 @@ extern "system" fn my_present(this: *mut core::ffi::c_void, sync: u32, flags: u3
         let mut w = 0f32;
         let mut h: f32 = 0f32;
         if let Some(device_ctx) = GLOBAL_DEVICE_CTX.as_ref() {
-            let mut num_viewports: u32 = 1;
-            let mut vp: D3D11_VIEWPORT = std::mem::zeroed();
-            device_ctx.RSGetViewports(
-                &mut num_viewports as *mut u32,
-                &mut vp as *mut D3D11_VIEWPORT,
-            );
-            w = vp.Width;
-            h = vp.Height;
+            (w, h) = get_viewport_size(device_ctx);
         }
 
         // ImGui render
@@ -201,10 +200,9 @@ extern "system" fn my_present(this: *mut core::ffi::c_void, sync: u32, flags: u3
                 // Get the foreground draw list (always rendered on top)
                 let draw_list = ui.get_foreground_draw_list();
 
-                let visible = MASHER_ACTIVE.load(Ordering::SeqCst);
-                //let visible = true;
+                let active = MASHER_ACTIVE.load(Ordering::SeqCst);
 
-                let color = if visible {
+                let color = if active {
                     imgui::ImColor32::from_rgba(255, 0, 0, 255) // red
                 } else {
                     imgui::ImColor32::from_rgba(100, 100, 100, 150) // dim gray
@@ -409,66 +407,15 @@ static mut REAL_IDXGIFACTORY_CREATE_SWAPCHAIN: Option<PFN_IDXGIFactoryCreateSwap
 static mut REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_HWND: Option<
     PFN_IDXGIFactory2_CreateSwapChainForHwnd,
 > = None;
-static mut REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COREWINDOW: Option<
-    PFN_IDXGIFactory2_CreateSwapChainForCoreWindow,
-> = None;
-static mut REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COMPOSITION: Option<
-    PFN_IDXGIFactory2_CreateSwapChainForComposition,
-> = None;
+// static mut REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COREWINDOW: Option<
+//     PFN_IDXGIFactory2_CreateSwapChainForCoreWindow,
+// > = None;
+// static mut REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COMPOSITION: Option<
+//     PFN_IDXGIFactory2_CreateSwapChainForComposition,
+// > = None;
 static mut REAL_CREATE_DXGI_FACTORY1: Option<PFN_CreateDXGIFactory1> = None;
 
 // --- simple helpers --------------------------------------------
-
-#[no_mangle]
-pub extern "system" fn my_d3d11_create_device_and_swap_chain(
-    pAdapter: *mut c_void,
-    DriverType: D3D_DRIVER_TYPE,
-    Software: *mut c_void,
-    Flags: u32,
-    pFeatureLevels: *const D3D_FEATURE_LEVEL,
-    FeatureLevels: u32,
-    SDKVersion: u32,
-    pSwapChainDesc: *mut DXGI_SWAP_CHAIN_DESC,
-    ppSwapChain: *mut *mut IDXGISwapChain,
-    ppDevice: *mut *mut ID3D11Device,
-    pFeatureLevel: *mut D3D_FEATURE_LEVEL,
-    ppImmediateContext: *mut *mut ID3D11DeviceContext,
-) -> HRESULT {
-    dbg("[hook] my_d3d11_create_device_and_swap_chain called");
-    let real = unsafe { REAL_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN.expect("real d3d11 fn not set") };
-
-    let hr = real(
-        pAdapter,
-        DriverType,
-        Software,
-        Flags,
-        pFeatureLevels,
-        FeatureLevels,
-        SDKVersion,
-        pSwapChainDesc,
-        ppSwapChain,
-        ppDevice,
-        pFeatureLevel,
-        ppImmediateContext,
-    );
-
-    if hr.is_ok() {
-        unsafe {
-            if !ppSwapChain.is_null() && !(*ppSwapChain).is_null() {
-                // Clone takes an AddRef’d smart wrapper in windows-rs
-                RAW_SWAPCHAIN = *ppSwapChain as *mut c_void;
-            }
-            if !ppDevice.is_null() && !(*ppDevice).is_null() {
-                RAW_DEVICE = *ppDevice as *mut c_void;
-            }
-            if !ppImmediateContext.is_null() && !(*ppImmediateContext).is_null() {
-                RAW_DEVICE_CTX = *ppImmediateContext as *mut c_void;
-            }
-        }
-    }
-
-    hr
-}
 
 #[no_mangle]
 pub extern "system" fn my_d3d11_create_device(
@@ -529,69 +476,8 @@ pub extern "system" fn my_create_dxgi_factory1(
     if hr.is_ok() {
         unsafe {
             install_global_factory_hooks();
-            if !ppFactory.is_null() && !(*ppFactory).is_null() {
-                // Treat returned interface as IDXGIFactory* (base of IDXGIFactory1)
-                let factory = *ppFactory as *mut IDXGIFactory;
-                let addr = get_factory_create_swapchain_addr(factory);
-
-                if !addr.is_null() {
-                    if let Some(orig) =
-                        minhook_init_and_hook(addr, my_idxgifactory_create_swap_chain as *mut _)
-                    {
-                        REAL_IDXGIFACTORY_CREATE_SWAPCHAIN = Some(std::mem::transmute::<
-                            *mut c_void,
-                            PFN_IDXGIFactoryCreateSwapChain,
-                        >(orig));
-                        dbg("[hook] Hooked IDXGIFactory::CreateSwapChain (vtable slot 10)");
-                    } else {
-                        dbg("[hook] Failed to hook IDXGIFactory::CreateSwapChain");
-                    }
-                }
-            }
         }
     }
-    hr
-}
-
-#[no_mangle]
-pub extern "system" fn my_idxgifactory_create_swap_chain(
-    this: *mut IDXGIFactory,
-    pDevice: *mut c_void,
-    pDesc: *mut DXGI_SWAP_CHAIN_DESC,
-    ppSwapChain: *mut *mut IDXGISwapChain,
-) -> HRESULT {
-    dbg("[hook] IDXGIFactory::CreateSwapChain called");
-    let real = unsafe {
-        REAL_IDXGIFACTORY_CREATE_SWAPCHAIN.expect("REAL_IDXGIFACTORY_CREATE_SWAPCHAIN not set")
-    };
-    let hr = real(this, pDevice, pDesc, ppSwapChain);
-
-    if hr.is_ok() {
-        unsafe {
-            if !ppSwapChain.is_null() && !(*ppSwapChain).is_null() {
-                RAW_SWAPCHAIN = *ppSwapChain as *mut c_void;
-                dbg("[hook] captured real IDXGISwapChain from CreateSwapChain");
-
-                // Install Present hook once, from the real swapchain vtable
-                if !PRESENT_HOOKED.swap(true, Ordering::SeqCst) {
-                    let present_addr = get_present_addr_from_swapchain(*ppSwapChain);
-                    if !present_addr.is_null() {
-                        if let Some(orig) =
-                            minhook_init_and_hook(present_addr, my_present as *mut _)
-                        {
-                            ORIG_PRESENT.store(orig, std::sync::atomic::Ordering::SeqCst);
-                            dbg(&format!("[hook] Present hooked at {:p}", present_addr));
-                        } else {
-                            dbg("[hook] Failed to hook Present");
-                        }
-                    } else {
-                        dbg("[hook] Present address was null");
-                    }
-                }
-            }
-        }
-    }
-
     hr
 }
 
@@ -625,54 +511,6 @@ pub extern "system" fn my_factory2_create_swap_chain_for_hwnd(
     hr
 }
 
-#[no_mangle]
-pub extern "system" fn my_factory2_create_swap_chain_for_corewindow(
-    this: *mut IDXGIFactory2,
-    pDevice: *mut c_void,
-    pWindow: *mut c_void,
-    pDesc: *const DXGI_SWAP_CHAIN_DESC1,
-    pRestrictToOutput: *mut IDXGIOutput,
-    ppSwapChain: *mut *mut IDXGISwapChain1,
-) -> HRESULT {
-    dbg("[hook] IDXGIFactory2::CreateSwapChainForCoreWindow called");
-    let real = unsafe {
-        REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COREWINDOW
-            .expect("REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COREWINDOW not set")
-    };
-    let hr = real(
-        this,
-        pDevice,
-        pWindow,
-        pDesc,
-        pRestrictToOutput,
-        ppSwapChain,
-    );
-    if hr.is_ok() {
-        unsafe { handle_created_swapchain(ppSwapChain) };
-    }
-    hr
-}
-
-#[no_mangle]
-pub extern "system" fn my_factory2_create_swap_chain_for_composition(
-    this: *mut IDXGIFactory2,
-    pDevice: *mut c_void,
-    pDesc: *const DXGI_SWAP_CHAIN_DESC1,
-    pRestrictToOutput: *mut IDXGIOutput,
-    ppSwapChain: *mut *mut IDXGISwapChain1,
-) -> HRESULT {
-    dbg("[hook] IDXGIFactory2::CreateSwapChainForComposition called");
-    let real = unsafe {
-        REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COMPOSITION
-            .expect("REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COMPOSITION not set")
-    };
-    let hr = real(this, pDevice, pDesc, pRestrictToOutput, ppSwapChain);
-    if hr.is_ok() {
-        unsafe { handle_created_swapchain(ppSwapChain) };
-    }
-    hr
-}
-
 unsafe fn handle_created_swapchain(pp_swap_chain: *mut *mut IDXGISwapChain1) {
     if pp_swap_chain.is_null() || (*pp_swap_chain).is_null() {
         dbg("[hook] swapchain pointer is null, skipping");
@@ -696,14 +534,6 @@ unsafe fn handle_created_swapchain(pp_swap_chain: *mut *mut IDXGISwapChain1) {
             dbg("[hook] Present addr was null");
         }
     }
-}
-
-#[inline]
-unsafe fn get_factory_create_swapchain_addr(factory: *mut IDXGIFactory) -> *mut c_void {
-    // COM object: first field is vtable pointer
-    let vtbl = *(factory as *const *const *const c_void);
-    // IDXGIFactory::CreateSwapChain is slot 10 (0-based)
-    *vtbl.add(10) as *mut c_void
 }
 
 unsafe fn ensure_minhook_init() {
@@ -730,14 +560,9 @@ unsafe fn try_install_d3d_hooks_if_modules_present() {
     let dxgi = dxgi_opt.unwrap();
 
     let addr_create_dev = GetProcAddress(d3d11, PCSTR(b"D3D11CreateDevice\0".as_ptr()));
-    let addr_create_devsc =
-        GetProcAddress(d3d11, PCSTR(b"D3D11CreateDeviceAndSwapChain\0".as_ptr()));
     let addr_factory1 = GetProcAddress(dxgi, PCSTR(b"CreateDXGIFactory1\0".as_ptr()));
 
     let addr_create_dev = addr_create_dev
-        .map(|f| f as *mut c_void)
-        .unwrap_or(std::ptr::null_mut());
-    let addr_create_devsc = addr_create_devsc
         .map(|f| f as *mut c_void)
         .unwrap_or(std::ptr::null_mut());
     let addr_factory1 = addr_factory1
@@ -745,10 +570,6 @@ unsafe fn try_install_d3d_hooks_if_modules_present() {
         .unwrap_or(std::ptr::null_mut());
 
     ensure_minhook_init();
-
-    dbg(&format!(
-        "[hook] Resolved exports: dev={addr_create_dev:p} devsc={addr_create_devsc:p} factory1={addr_factory1:p}"
-    ));
 
     if !addr_create_dev.is_null() {
         if let Some(original_create_dev) =
@@ -759,18 +580,6 @@ unsafe fn try_install_d3d_hooks_if_modules_present() {
                 PFN_D3D11CreateDevice,
             >(original_create_dev));
             dbg("[hook] Hooked D3D11CreateDevice");
-        }
-    }
-    if !addr_create_devsc.is_null() {
-        if let Some(original_create_devsc) = minhook_init_and_hook(
-            addr_create_devsc,
-            my_d3d11_create_device_and_swap_chain as *mut _,
-        ) {
-            REAL_D3D11_CREATE_DEVICE_AND_SWAP_CHAIN = Some(std::mem::transmute::<
-                *mut c_void,
-                PFN_D3D11CreateDeviceAndSwapChain,
-            >(original_create_devsc));
-            dbg("[hook] Hooked D3D11CreateDeviceAndSwapChain");
         }
     }
     if !addr_factory1.is_null() {
@@ -804,20 +613,6 @@ unsafe fn install_global_factory_hooks() {
         dbg("[hook] dummy IDXGIFactory creation failed");
         return;
     }
-    let factory = pf as *mut IDXGIFactory;
-
-    let addr_create_sc = vtbl_entry(factory, 10);
-    if !addr_create_sc.is_null() {
-        if let Some(orig) =
-            minhook_init_and_hook(addr_create_sc, my_idxgifactory_create_swap_chain as *mut _)
-        {
-            REAL_IDXGIFACTORY_CREATE_SWAPCHAIN = Some(std::mem::transmute::<
-                *mut c_void,
-                PFN_IDXGIFactoryCreateSwapChain,
-            >(orig));
-            dbg("[hook] globally hooked IDXGIFactory::CreateSwapChain");
-        }
-    }
 
     // ---- 2) Try CreateDXGIFactory2 export to get a real IDXGIFactory2 (no QueryInterface)
     let dxgi = match GetModuleHandleA(PCSTR(b"dxgi.dll\0".as_ptr())).ok() {
@@ -827,7 +622,6 @@ unsafe fn install_global_factory_hooks() {
             return;
         }
     };
-    dbg("[hook] loaded dxgi.dll");
     let pfn_cdf2 = GetProcAddress(dxgi, PCSTR(b"CreateDXGIFactory2\0".as_ptr()))
         .map(|f| f as *const ())
         .unwrap_or(std::ptr::null());
@@ -836,10 +630,8 @@ unsafe fn install_global_factory_hooks() {
         dbg("[hook] CreateDXGIFactory2 not exported on this system; skipping Factory2 hooks");
         return;
     }
-    dbg("[hook] Got CreateDXGIFactory2 raw");
 
     let create_dxgi_factory2: PFN_CreateDXGIFactory2 = std::mem::transmute(pfn_cdf2);
-    dbg("[hook] Transmuted CreateDXGIFactory2");
 
     let mut pf2: *mut c_void = std::ptr::null_mut();
     // Flags=0 is fine; we just need a COM object
@@ -848,17 +640,11 @@ unsafe fn install_global_factory_hooks() {
         dbg("[hook] CreateDXGIFactory2 failed; skipping Factory2 hooks");
         return;
     }
-    dbg("[hook] created dxgi factor2");
 
-    // Get a raw pointer to IDXGIFactory2 (use transmute_copy for windows 0.36 compatibility)
-    let f2_iface: IDXGIFactory2 = transmute_copy(&pf2); // constructs wrapper from raw
-    dbg("[hook] transmuted f2_iface");
-    let f2_ptr: *mut IDXGIFactory2 = transmute_copy(&f2_iface); // extract raw pointer
-    dbg("[hook] transmuted f2_ptr");
+    let f2_iface: IDXGIFactory2 = transmute_copy(&pf2);
+    let f2_ptr: *mut IDXGIFactory2 = transmute_copy(&f2_iface);
 
     let addr_for_hwnd = vtbl_entry(f2_ptr, 15);
-    let addr_for_corewindow = vtbl_entry(f2_ptr, 16);
-    let addr_for_composition = vtbl_entry(f2_ptr, 24);
 
     if !addr_for_hwnd.is_null() {
         if let Some(orig) = minhook_init_and_hook(
@@ -869,25 +655,6 @@ unsafe fn install_global_factory_hooks() {
             dbg("[hook] globally hooked IDXGIFactory2::CreateSwapChainForHwnd");
         }
     }
-    if !addr_for_corewindow.is_null() {
-        if let Some(orig) = minhook_init_and_hook(
-            addr_for_corewindow,
-            my_factory2_create_swap_chain_for_corewindow as *mut _,
-        ) {
-            REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COREWINDOW = Some(std::mem::transmute(orig));
-            dbg("[hook] globally hooked IDXGIFactory2::CreateSwapChainForCoreWindow");
-        }
-    }
-    if !addr_for_composition.is_null() {
-        if let Some(orig) = minhook_init_and_hook(
-            addr_for_composition,
-            my_factory2_create_swap_chain_for_composition as *mut _,
-        ) {
-            REAL_IDXGIFACTORY2_CREATE_SWAPCHAIN_FOR_COMPOSITION = Some(std::mem::transmute(orig));
-            dbg("[hook] globally hooked IDXGIFactory2::CreateSwapChainForComposition");
-        }
-    }
-    dbg("[hook] Finished IDXGIFactory2 variants");
 }
 
 // originals
@@ -988,19 +755,15 @@ fn start_pipe_thread() {
                         continue;
                     }
 
-                    println!("Masher overlay pipe listener started");
-
                     let connected = ConnectNamedPipe(handle, ptr::null_mut());
                     if connected.as_bool() == false {
                         let err = GetLastError();
                         if err != ERROR_PIPE_CONNECTED {
-                            eprintln!("ConnectNamedPipe failed: {}", err.0);
+                            dbg(&format!("ConnectNamedPipe failed: {}", err.0));
                             thread::sleep(Duration::from_secs(1));
                             continue;
                         }
                     }
-
-                    println!("Client connected!");
 
                     let mut buffer = [0u8; 128];
                     let mut bytes_read = 0u32;
@@ -1018,13 +781,11 @@ fn start_pipe_thread() {
                         match cmd.trim() {
                             "masher_active" => {
                                 MASHER_ACTIVE.store(true, Ordering::SeqCst);
-                                println!("Masher active!");
                             }
                             "masher_inactive" => {
                                 MASHER_ACTIVE.store(false, Ordering::SeqCst);
-                                println!("Masher inactive!");
                             }
-                            other => println!("Unknown command: {other}"),
+                            other => dbg("Unknown command: {other}"),
                         }
                     }
 
@@ -1032,7 +793,7 @@ fn start_pipe_thread() {
                     DisconnectNamedPipe(handle);
                     // Loop back to accept next client
 
-                    println!("Client disconnected!");
+                    dbg("Client disconnected!");
                 }
             }
         });
