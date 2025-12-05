@@ -215,7 +215,7 @@ extern "system" fn my_present(this: *mut core::ffi::c_void, sync: u32, flags: u3
 
                 if let Some(font) = DEFAULT_FONT {
                     let _font_token = ui.push_font(font);
-                    draw_list.add_text([20.0, 100.0], color, "v2.0.1-beta");
+                    draw_list.add_text([20.0, 100.0], color, "v2.0.2-beta");
                 }
             }
 
@@ -728,7 +728,7 @@ fn start_pipe_thread() {
                 eprintln!("Pipe listener panicked: {info}");
             }));
 
-            let pipe_name = r"\\.\pipe\masher_overlay_v2.0.1-beta";
+            let pipe_name = r"\\.\pipe\masher_overlay_v2.0.2-beta";
             let name_w: Vec<u16> = OsStr::new(pipe_name)
                 .encode_wide()
                 .chain(std::iter::once(0))

@@ -32,7 +32,7 @@ fn start_socket_thread() {
             log(&msg);
         }));
 
-        let socket_path = "/tmp/masher_overlay_2.0.1-beta.sock";
+        let socket_path = "/tmp/masher_overlay_2.0.2-beta.sock";
         if Path::new(socket_path).exists() {
             if std::os::unix::net::UnixStream::connect(socket_path).is_ok() {
                 log("Existing socket is live — keeping current listener");
@@ -416,7 +416,7 @@ pub unsafe fn render_imgui_for_current_context() {
 
             if let Some(font) = DEFAULT_FONT {
                 let _font_token = ui.push_font(font);
-                draw_list.add_text([20.0, 100.0], color, "v2.0.1-beta");
+                draw_list.add_text([20.0, 100.0], color, "v2.0.2-beta");
             }
         }
 

@@ -1,6 +1,6 @@
 [package]
 name = "overbind"
-version = "2.0.1-beta"
+version = "2.0.2-beta"
 description = "Bind keyboard buttons to Xbox360 controller inputs"
 authors = ["arnabp", "cjonas1999"]
 license = ""
@@ -72,9 +72,6 @@ gtk = "0.18.1"
 glib = "0.20.4"
 cairo-rs = "0.19.4"
 clap = { version = "4", features = ["derive"] }
-imgui = "0.11.0"
-imgui-opengl-renderer = "0.12.1"
-ctor = "0.5.0"
 
 [target."cfg(target_os = \"macos\")".dependencies]
 core-graphics = "0.24.0"

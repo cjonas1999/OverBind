@@ -862,7 +862,7 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
 }
 
 fn toggle_masher_overlay(active: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stream = UnixStream::connect("/tmp/masher_overlay_2.0.1-beta.sock")?;
+    let mut stream = UnixStream::connect("/tmp/masher_overlay_2.0.2-beta.sock")?;
     let mut command = None;
     if active {
         debug!("Showing masher overlay");
