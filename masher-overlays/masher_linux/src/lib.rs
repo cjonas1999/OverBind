@@ -1,9 +1,26 @@
 #![cfg(target_os = "linux")]
 
+use ash::vk;
+use ash::vk::CommandPoolCreateFlags;
+use ash::vk::Handle;
+use ash::vk::PFN_vkCmdBeginRenderPass;
+use ash::vk::PFN_vkCmdEndRenderPass;
+use ash::vk::PFN_vkCreateCommandPool;
+use ash::vk::PFN_vkCreateDevice;
+use ash::vk::PFN_vkCreateInstance;
+use ash::vk::PFN_vkCreateRenderPass2;
+use ash::vk::PFN_vkCreateSwapchainKHR;
+use ash::vk::PFN_vkGetDeviceQueue;
+use ash::vk::PFN_vkVoidFunction;
+use ash::vk::StructureType;
+use ash::Entry;
+use ash::Instance;
 use ctor::ctor;
-use libc::{c_char, c_void, RTLD_DEFAULT, RTLD_NEXT};
+use libc::{c_char, c_int, c_void, RTLD_DEFAULT, RTLD_NEXT};
 use once_cell::sync::OnceCell;
+use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::fs;
@@ -13,11 +30,13 @@ use std::mem;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
-use std::process::Command;
 use std::ptr;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::sync::Mutex;
 use std::sync::{Once, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -208,7 +227,7 @@ unsafe extern "C" fn glDrawElements_proxy(mode: u32, count: i32, ty: u32, indice
     }
     log("glDrawElements_proxy");
     if !FRAME_RENDERED.swap(true, Ordering::SeqCst) {
-        render_imgui_for_current_context();
+        render_imgui_for_current_context_gl();
     }
     if let Some(sym) = ORIG_GLDRAWELEMENTS.get() {
         if !sym.0.is_null() {
@@ -228,7 +247,7 @@ unsafe extern "C" fn glDrawArrays_proxy(mode: u32, first: i32, count: i32) {
         return;
     }
     log("glDrawArrays_proxy");
-    render_imgui_for_current_context();
+    render_imgui_for_current_context_gl();
     if let Some(sym) = ORIG_GLDRAWARRAYS.get() {
         if !sym.0.is_null() {
             let orig: extern "C" fn(u32, i32, i32) = mem::transmute(sym.0);
@@ -273,12 +292,18 @@ pub unsafe extern "C" fn glXGetProcAddress(name: *const u8) -> *const c_void {
     }
 }
 
-struct Overlay {
-    // the OpenGL renderer from imgui-opengl-renderer
+struct GlOverlay {
     renderer: Option<imgui_opengl_renderer::Renderer>,
 }
+struct VulkanOverlay {
+    renderer: Option<imgui_rs_vulkan_renderer::Renderer>,
+    current_render_pass: vk::RenderPass,
+    pending_render_pass: Option<vk::RenderPass>,
+}
+
 thread_local! {
-    static OVERLAY: RefCell<Option<Overlay>> = RefCell::new(None);
+    static GL_OVERLAY: RefCell<Option<GlOverlay>> = RefCell::new(None);
+    static VULKAN_OVERLAY: RefCell<Option<VulkanOverlay>> = RefCell::new(None);
 }
 
 static mut GLOBAL_CTX: Option<NonNull<imgui::Context>> = None;
@@ -286,6 +311,16 @@ static mut DEFAULT_FONT: Option<imgui::FontId> = None;
 static mut ICON_FONT: Option<imgui::FontId> = None;
 static INIT: Once = Once::new();
 static GL_GET_INTEGERV: OnceLock<extern "C" fn(u32, *mut i32)> = OnceLock::new();
+static ASH_ENTRY: OnceLock<Entry> = OnceLock::new();
+static OVERLAY_COMMAND_POOL: OnceLock<vk::CommandPool> = OnceLock::new();
+
+static VULKAN_READY: OnceLock<bool> = OnceLock::new();
+fn set_vulkan_ready() {
+    let _ = VULKAN_READY.set(true);
+}
+fn is_vulkan_ready() -> bool {
+    *VULKAN_READY.get_or_init(|| false)
+}
 
 unsafe fn get_gl_get_integerv() -> extern "C" fn(u32, *mut i32) {
     *GL_GET_INTEGERV.get_or_init(|| std::mem::transmute(renderer_gl_loader("glGetIntegerv")))
@@ -327,19 +362,6 @@ fn get_imgui_context() -> &'static mut imgui::Context {
     }
 }
 
-fn with_overlay<F: FnOnce(&mut imgui::Context, &mut Overlay)>(f: F) {
-    let ctx = get_imgui_context();
-    OVERLAY.with(|cell| {
-        let mut ov_opt = cell.borrow_mut();
-        if ov_opt.is_none() {
-            ov_opt.replace(Overlay { renderer: None });
-        }
-        let ov = ov_opt.as_mut().expect("overlay state just set");
-
-        f(ctx, ov);
-    });
-}
-
 unsafe fn renderer_gl_loader(name: &str) -> *const c_void {
     let cname = CString::new(name).unwrap();
 
@@ -361,7 +383,7 @@ unsafe fn renderer_gl_loader(name: &str) -> *const c_void {
     std::ptr::null()
 }
 
-unsafe fn try_init_renderer_if_ready(ov: &mut Overlay, ctx: &mut imgui::Context) -> bool {
+unsafe fn try_init_gl_renderer_if_ready(ov: &mut GlOverlay, ctx: &mut imgui::Context) -> bool {
     if ov.renderer.is_some() {
         return true;
     }
@@ -375,11 +397,67 @@ unsafe fn try_init_renderer_if_ready(ov: &mut Overlay, ctx: &mut imgui::Context)
     true
 }
 
-pub unsafe fn render_imgui_for_current_context() {
-    with_overlay(|ctx, ov| {
-        // lazy-create renderer when a valid GL context is current
+unsafe fn init_vk_renderer_if_needed(ov: &mut VulkanOverlay, ctx: &mut imgui::Context) -> bool {
+    if ov.renderer.is_some() {
+        return true;
+    }
+
+    if !is_vulkan_ready() {
+        // You can gate this on seeing vkCreateDevice / vkCreateSwapchainKHR
+        log("Vulkan not ready for ImGui renderer yet");
+        return false;
+    }
+
+    let entry = ASH_ENTRY.get_or_init(|| {
+        // This will call into libvulkan.so.1 (which you already dlopen anyway)
+        unsafe { Entry::load().expect("failed to load Vulkan entry") }
+    });
+
+    let vk_instance: &vk::Instance =
+        &vk::Instance::from_raw(INSTANCE_HANDLE_RAW.load(Ordering::SeqCst));
+    let phys: vk::PhysicalDevice = *PHYSICAL_DEVICE_HANDLE.get().unwrap();
+    let vk_device: vk::Device = *DEVICE_HANDLE.get().unwrap();
+    let queue: vk::Queue = *QUEUE_HANDLE.get().unwrap();
+    let command_pool: vk::CommandPool = get_or_create_overlay_command_pool().unwrap();
+    log("got command pool");
+    let render_pass: vk::RenderPass = *RENDER_PASS_HANDLE.get().unwrap();
+    log("got render pass");
+
+    let instance = Instance::load(entry.static_fn(), *vk_instance);
+    log("got instance");
+    let device = ash::Device::load(instance.fp_v1_0(), vk_device);
+
+    log("created variables for renderer");
+
+    ov.renderer = Some(
+        imgui_rs_vulkan_renderer::Renderer::with_default_allocator(
+            &instance,
+            phys,
+            device,
+            queue,
+            command_pool,
+            render_pass,
+            ctx,
+            None,
+        )
+        .unwrap(),
+    );
+
+    log("Vulkan ImGui renderer created");
+    true
+}
+
+pub unsafe fn render_imgui_for_current_context_gl() {
+    let ctx = get_imgui_context();
+    GL_OVERLAY.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            opt.replace(GlOverlay { renderer: None });
+        }
+        let ov = opt.as_mut().unwrap();
+
         if ov.renderer.is_none() {
-            if !try_init_renderer_if_ready(ov, ctx) {
+            if !try_init_gl_renderer_if_ready(ov, ctx) {
                 return;
             }
         }
@@ -393,38 +471,99 @@ pub unsafe fn render_imgui_for_current_context() {
 
         let width = vp[2].max(1) as f32;
         let height = vp[3].max(1) as f32;
-        ctx.io_mut().display_size = [width, height];
-
-        let ui = ctx.new_frame();
-
-        {
-            // Get the foreground draw list (always rendered on top)
-            let draw_list = ui.get_foreground_draw_list();
-
-            let visible = MASHER_ACTIVE.load(Ordering::SeqCst);
-
-            let color = if visible {
-                imgui::ImColor32::from_rgba(255, 0, 0, 255) // red
-            } else {
-                imgui::ImColor32::from_rgba(100, 100, 100, 150) // dim gray
-            };
-
-            if let Some(font) = ICON_FONT {
-                let _font_token = ui.push_font(font);
-                draw_list.add_text([20.0, 60.0], color, "X");
-            }
-
-            if let Some(font) = DEFAULT_FONT {
-                let _font_token = ui.push_font(font);
-                draw_list.add_text([20.0, 100.0], color, "v2.0.2-beta");
-            }
-        }
+        build_overlay_ui(ctx, [width, height]);
 
         if let Some(renderer) = ov.renderer.as_mut() {
             renderer.render(ctx);
             log("finished rendering");
         }
     });
+}
+
+pub unsafe fn render_imgui_for_vulkan_frame(
+    command_buffer: vk::CommandBuffer,
+    width: f32,
+    height: f32,
+) {
+    let ctx = get_imgui_context();
+
+    VULKAN_OVERLAY.with(|cell| {
+        let mut opt = cell.borrow_mut();
+        if opt.is_none() {
+            opt.replace(VulkanOverlay {
+                renderer: None,
+                pending_render_pass: None,
+                current_render_pass: vk::RenderPass::null(),
+            });
+        }
+        let ov = opt.as_mut().unwrap();
+
+        if ov.renderer.is_none() {
+            if !init_vk_renderer_if_needed(ov, ctx) {
+                return;
+            }
+        }
+
+        // Renderer exists; only call set_render_pass if this is a different RP.
+        if ov.pending_render_pass.is_some()
+            && ov.pending_render_pass.unwrap() != ov.current_render_pass
+        {
+            if let Some(ref mut renderer) = ov.renderer {
+                let new_rp = ov.pending_render_pass.unwrap();
+                match renderer.set_render_pass(new_rp) {
+                    Ok(()) => {
+                        ov.current_render_pass = new_rp;
+                        log(&format!("[vkshim] renderer.set_render_pass({new_rp:?}) OK"));
+                    }
+                    Err(e) => {
+                        log(&format!("[vkshim] set_render_pass failed: {e:?}"));
+                    }
+                }
+            }
+        }
+
+        build_overlay_ui(ctx, [width, height]);
+
+        if let Some(renderer) = ov.renderer.as_mut() {
+            let draw_data = ctx.render();
+            let res = renderer.cmd_draw(command_buffer, draw_data);
+            if res.is_err() {
+                log(&format!(
+                    "[vkshim] Vulkan overlay rendering failed: {:?}",
+                    res.err().unwrap()
+                ));
+            } else {
+                //log("finished Vulkan overlay rendering");
+            }
+        }
+    });
+}
+
+pub fn build_overlay_ui(ctx: &mut imgui::Context, display_size: [f32; 2]) {
+    ctx.io_mut().display_size = display_size;
+
+    let ui = ctx.new_frame();
+
+    // foreground draw list – "always on top"
+    let draw_list = ui.get_foreground_draw_list();
+
+    let visible = MASHER_ACTIVE.load(Ordering::SeqCst);
+
+    let color = if visible {
+        imgui::ImColor32::from_rgba(255, 0, 0, 255) // red
+    } else {
+        imgui::ImColor32::from_rgba(100, 100, 100, 150) // dim gray
+    };
+
+    if let Some(font) = unsafe { ICON_FONT } {
+        let _font_token = ui.push_font(font);
+        draw_list.add_text([20.0, 60.0], color, "X");
+    }
+
+    if let Some(font) = unsafe { DEFAULT_FONT } {
+        let _font_token = ui.push_font(font);
+        draw_list.add_text([20.0, 100.0], color, "v2.0.2-beta");
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -440,4 +579,634 @@ fn log(msg: &str) {
 #[cfg(not(debug_assertions))]
 fn log(_msg: &str) {
     // No-op in release
+}
+
+// Function pointer types for the real loader functions.
+
+type VkGetDeviceProcAddr =
+    unsafe extern "system" fn(vk::Device, *const libc::c_char) -> PFN_vkVoidFunction;
+
+struct VulkanHandle(*mut c_void);
+unsafe impl Send for VulkanHandle {}
+unsafe impl Sync for VulkanHandle {}
+
+static VULKAN_HANDLE: OnceLock<VulkanHandle> = OnceLock::new();
+static REAL_VK_GET_DEVICE_PROC_ADDR: OnceLock<Option<VkGetDeviceProcAddr>> = OnceLock::new();
+
+static INSTANCE_HANDLE_RAW: AtomicU64 = AtomicU64::new(0);
+static PHYSICAL_DEVICE_HANDLE: OnceLock<vk::PhysicalDevice> = OnceLock::new();
+static DEVICE_HANDLE: OnceLock<vk::Device> = OnceLock::new();
+static QUEUE_HANDLE: OnceLock<vk::Queue> = OnceLock::new();
+static COMMAND_POOL_HANDLE: OnceLock<vk::CommandPool> = OnceLock::new();
+static RENDER_PASS_HANDLE: OnceLock<vk::RenderPass> = OnceLock::new();
+
+static GRAPHICS_QUEUE_FAMILY_INDEX: OnceLock<u32> = OnceLock::new();
+
+static REAL_VK_CREATE_INSTANCE: OnceLock<PFN_vkCreateInstance> = OnceLock::new();
+static REAL_VK_CREATE_DEVICE: OnceLock<PFN_vkCreateDevice> = OnceLock::new();
+static REAL_VK_GET_DEVICE_QUEUE: OnceLock<PFN_vkGetDeviceQueue> = OnceLock::new();
+static REAL_VK_CREATE_COMMAND_POOL: OnceLock<PFN_vkCreateCommandPool> = OnceLock::new();
+static REAL_VK_CREATE_RENDER_PASS2KHR: OnceLock<PFN_vkCreateRenderPass2> = OnceLock::new();
+static REAL_VK_CMD_BEGIN_RENDER_PASS: OnceLock<PFN_vkCmdBeginRenderPass> = OnceLock::new();
+static REAL_VK_CMD_END_RENDER_PASS: OnceLock<PFN_vkCmdEndRenderPass> = OnceLock::new();
+static REAL_VK_CREATE_SWAPCHAIN: OnceLock<PFN_vkCreateSwapchainKHR> = OnceLock::new();
+static SWAPCHAIN_FORMAT: OnceLock<vk::Format> = OnceLock::new();
+static PRESENT_RPS: OnceLock<Mutex<HashSet<vk::RenderPass>>> = OnceLock::new();
+
+fn present_rps() -> &'static Mutex<HashSet<vk::RenderPass>> {
+    PRESENT_RPS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+thread_local! {
+    static CURRENT_CMD_BUF: Cell<Option<vk::CommandBuffer>> = Cell::new(None);
+    static CURRENT_EXTENT: Cell<(u32, u32)> = Cell::new((0, 0));
+    static CURRENT_RP_IS_VALID: Cell<bool> = Cell::new(false);
+}
+
+extern "C" {
+    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    fn dlerror() -> *const c_char;
+}
+
+// dlopen flags
+const RTLD_LAZY: c_int = 0x00001;
+const RTLD_NOW: c_int = 0x00002;
+const RTLD_LOCAL: c_int = 0x00000;
+const RTLD_GLOBAL: c_int = 0x00100;
+unsafe fn get_vulkan_handle() -> *mut c_void {
+    VULKAN_HANDLE
+        .get_or_init(|| {
+            unsafe fn try_open(name: &str) -> Option<*mut c_void> {
+                let cname = CString::new(name).unwrap();
+                let handle = dlopen(cname.as_ptr(), RTLD_NOW | RTLD_LOCAL | RTLD_GLOBAL);
+                if handle.is_null() {
+                    None
+                } else {
+                    Some(handle)
+                }
+            }
+
+            if let Some(handle) = try_open("libvulkan.so.1") {
+                log("[vkshim] opened libvulkan.so.1");
+                VulkanHandle(handle)
+            } else if let Some(handle) = try_open("libvulkan.so") {
+                log("[vkshim] opened libvulkan.so");
+                VulkanHandle(handle)
+            } else {
+                let err = dlerror();
+                let msg = if !err.is_null() {
+                    CStr::from_ptr(err).to_string_lossy().into_owned()
+                } else {
+                    "<no dlerror>".to_string()
+                };
+                log(&format!(
+                    "[vkshim] FATAL: failed to dlopen libvulkan.so.1 or libvulkan.so: {msg}"
+                ));
+                std::process::abort();
+            }
+        })
+        .0
+}
+
+unsafe extern "system" fn my_vkCreateSwapchainKHR(
+    device: vk::Device,
+    p_create_info: *const vk::SwapchainCreateInfoKHR,
+    p_allocator: *const vk::AllocationCallbacks,
+    p_swapchain: *mut vk::SwapchainKHR,
+) -> vk::Result {
+    let real = REAL_VK_CREATE_SWAPCHAIN.get().unwrap();
+    let res = real(device, p_create_info, p_allocator, p_swapchain);
+
+    if res == vk::Result::SUCCESS && !p_create_info.is_null() {
+        let ci = &*p_create_info;
+        let fmt = ci.image_format;
+        let _ = SWAPCHAIN_FORMAT.set(fmt);
+        log(&format!("[vkshim] captured swapchain format = {:?}", fmt));
+    }
+
+    res
+}
+
+// unsafe extern "system" fn my_vkQueueSubmit(
+//     queue: VkQueue,
+//     submit_count: u32,
+//     p_submits: *const c_void,
+//     fence: VkFence,
+// ) -> VkResult {
+//     // Debug: prove we're getting called
+//     // log(&format!(
+//     //     "[vkshim] my_vkQueueSubmit called (submit_count = {submit_count})"
+//     // ));
+
+//     // Here is where you'd call your overlay logic.
+//     //
+//     // You *don't* have a GL context anymore; instead you will eventually:
+//     // - track device/swapchain/etc. via other hooks (vkCreateDevice, vkCreateSwapchainKHR),
+//     // - record your own command buffer for ImGui / overlay,
+//     // - and inject it into the submissions described by p_submits.
+//     //
+//     // For now, we just forward the call unchanged.
+
+//     let real = REAL_VK_QUEUE_SUBMIT
+//         .get()
+//         .expect("REAL_VK_QUEUE_SUBMIT not set");
+//     real(queue, submit_count, p_submits, fence)
+// }
+
+unsafe extern "system" fn my_vkCmdBeginRenderPass(
+    command_buffer: vk::CommandBuffer,
+    p_render_pass_begin: *const vk::RenderPassBeginInfo, // VkRenderPassBeginInfo
+    subpass_content: vk::SubpassContents,                // VkSubpassContents
+) {
+    let real = REAL_VK_CMD_BEGIN_RENDER_PASS
+        .get()
+        .expect("REAL_VK_CMD_BEGIN_RENDER_PASS not set");
+
+    if !p_render_pass_begin.is_null() {
+        let begin = &*p_render_pass_begin;
+        let rp = begin.render_pass;
+        let fb = begin.framebuffer;
+        let extent = begin.render_area.extent;
+        let clear_value_count = begin.clear_value_count;
+        let clear_values = *begin.p_clear_values;
+        let depth = clear_values.depth_stencil.depth;
+        let stencil = clear_values.depth_stencil.stencil;
+        let color_float = clear_values.color.float32;
+        let color_int = clear_values.color.int32;
+        let color_uint = clear_values.color.uint32;
+
+        if depth == 0.0 {
+            log(&format!(
+                "[vkshim] BeginRP: cmd_buf={command_buffer:?}, rp={rp:?}, fb={fb:?}, extent=({},{}), clear_count={}, depth={}, stencil={}, color_float={:?}, color_int={:?}, color_uint={:?}",
+                extent.width,
+                extent.height,
+                clear_value_count,
+                depth,
+                stencil,
+                color_float,
+                color_int,
+                color_uint,
+            ));
+            let extent = begin.render_area.extent;
+            CURRENT_CMD_BUF.with(|c| c.set(Some(command_buffer)));
+            CURRENT_EXTENT.with(|c| c.set((extent.width, extent.height)));
+            CURRENT_RP_IS_VALID.with(|c| c.set(true));
+
+            // Now you can queue this rp as "pending" for set_render_pass.
+            update_overlay_render_pass_from_hook(rp);
+        } else {
+            CURRENT_RP_IS_VALID.with(|c| c.set(false));
+        }
+    }
+
+    real(command_buffer, p_render_pass_begin, subpass_content);
+}
+
+unsafe extern "system" fn my_vkCmdEndRenderPass(command_buffer: vk::CommandBuffer) {
+    let real = REAL_VK_CMD_END_RENDER_PASS
+        .get()
+        .expect("REAL_VK_CMD_END_RENDER_PASS not set");
+
+    // Assume the first time render pass is called, the vulkan is ready
+    set_vulkan_ready();
+
+    CURRENT_RP_IS_VALID.with(|is_valid_cell| {
+        if is_valid_cell.get() {
+            CURRENT_EXTENT.with(|ext_cell| {
+                let (w, h) = ext_cell.get();
+                log(&format!(
+                    "[vkshim] EndRP for overlay: cmd_buf={command_buffer:?}, extent=({},{})",
+                    w, h
+                ));
+                render_imgui_for_vulkan_frame(command_buffer, w as f32, h as f32);
+            });
+        }
+    });
+
+    real(command_buffer);
+}
+
+unsafe extern "system" fn my_vkGetDeviceQueue(
+    device: vk::Device,
+    family_index: u32,
+    queue_index: u32,
+    p_queue: *mut vk::Queue,
+) {
+    let real = REAL_VK_GET_DEVICE_QUEUE
+        .get()
+        .expect("REAL_VK_GET_DEVICE_QUEUE not set");
+    real(device, family_index, queue_index, p_queue);
+
+    let q = *p_queue;
+    let _ = GRAPHICS_QUEUE_FAMILY_INDEX.set(family_index);
+    let _ = QUEUE_HANDLE.set(q); // first one wins – good enough
+    log(&format!(
+        "[vkshim] captured VkQueue = {q:p} (family={family_index}, index={queue_index})"
+    ));
+}
+
+unsafe extern "system" fn my_vkCreateCommandPool(
+    device: vk::Device,
+    p_create_info: *const vk::CommandPoolCreateInfo,
+    p_allocator: *const vk::AllocationCallbacks,
+    p_command_pool: *mut vk::CommandPool,
+) -> vk::Result {
+    let real = REAL_VK_CREATE_COMMAND_POOL
+        .get()
+        .expect("REAL_VK_CREATE_COMMAND_POOL not set");
+    let res = real(device, p_create_info, p_allocator, p_command_pool);
+    if res.result().is_ok() {
+        let pool = *p_command_pool;
+        let _ = COMMAND_POOL_HANDLE.set(pool);
+        log(&format!("[vkshim] captured VkCommandPool = {pool:p}"));
+    }
+    res
+}
+
+unsafe extern "system" fn my_vkCreateRenderPass2KHR(
+    device: vk::Device,
+    p_create_info: *const vk::RenderPassCreateInfo2,
+    p_allocator: *const vk::AllocationCallbacks,
+    p_render_pass: *mut vk::RenderPass,
+) -> vk::Result {
+    let real = REAL_VK_CREATE_RENDER_PASS2KHR
+        .get()
+        .expect("REAL_VK_CREATE_RENDER_PASS2KHR not set");
+    log(&format!(
+        "[vkshim] my_vkCreateRenderPass2KHR called: device={device:p}, ci={p_create_info:p}"
+    ));
+    let res = real(device, p_create_info, p_allocator, p_render_pass);
+
+    log(&format!(
+        "[vkshim] my_vkCreateRenderPass2KHR -> res={res}, out={}",
+        if !p_render_pass.is_null() {
+            unsafe { (*p_render_pass).as_raw() }
+        } else {
+            0
+        }
+    ));
+
+    if res.result().is_ok() {
+        let ci = &*p_create_info;
+        let rp = *p_render_pass;
+
+        let attachment_count = ci.attachment_count;
+        let attachments = std::slice::from_raw_parts(ci.p_attachments, attachment_count as usize);
+
+        log(&format!(
+            "[vkshim] RP {:?}: attachment_count={}, subpasses={}",
+            rp, attachment_count, ci.subpass_count
+        ));
+
+        let mut is_present_rp = false;
+
+        for (idx, att) in attachments.iter().enumerate() {
+            log(&format!(
+                "[vkshim]   att[{}]: fmt={:?}, initial={:?}, final={:?}",
+                idx, att.format, att.initial_layout, att.final_layout
+            ));
+
+            if att.final_layout == vk::ImageLayout::PRESENT_SRC_KHR {
+                is_present_rp = true;
+            }
+        }
+
+        if is_present_rp {
+            log(&format!(
+                "[vkshim] render pass {:?} marked as PRESENT_RP",
+                rp
+            ));
+            present_rps().lock().unwrap().insert(rp);
+        } else {
+            log(&format!(
+                "[vkshim] render pass {:?} is non-present (ignored for overlay)",
+                rp
+            ));
+        }
+        if RENDER_PASS_HANDLE.set(rp).is_ok() {
+            log(&format!("[vkshim] captured VkRenderPass = {rp:p}"));
+            update_overlay_render_pass_from_hook(rp);
+        } else {
+            log(&format!(
+                "[vkshim]VkRenderPass created = {rp:p}, but handle already set, resetting and rebuild render pass in imgui"
+            ));
+        }
+    }
+
+    res
+}
+
+static INSTANCE_CREATE_COUNT: AtomicU32 = AtomicU32::new(0);
+#[no_mangle]
+pub unsafe extern "system" fn vkCreateInstance(
+    p_create_info: *const vk::InstanceCreateInfo, // VkInstanceCreateInfo
+    p_allocator: *const vk::AllocationCallbacks,  // VkAllocationCallbacks
+    p_instance: *mut vk::Instance,
+) -> vk::Result {
+    let real = load_real_vkCreateInstance();
+
+    let call_no = INSTANCE_CREATE_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+
+    log(&format!(
+        "[vkshim] vkCreateInstance call #{}, thread={:?}, p_instance={p_instance:p}",
+        call_no,
+        std::thread::current().id(),
+    ));
+
+    let res = real(p_create_info, p_allocator, p_instance);
+    log(&format!(
+        "[vkshim] vkCreateInstance result={}, out_instance_ptr={}",
+        res,
+        if !p_instance.is_null() {
+            (*p_instance).as_raw()
+        } else {
+            0
+        }
+    ));
+
+    log(&format!("[vkshim] vkCreateInstance -> {res}"));
+    if res.result().is_ok() {
+        let inst = *p_instance;
+        let _ = INSTANCE_HANDLE_RAW.store(inst.as_raw(), Ordering::SeqCst);
+        log(&format!("[vkshim] captured VkInstance = {inst:p}"));
+    } else {
+        log(&format!(
+            "[vkshim] vkCreateInstance failed or p_instance null"
+        ));
+    }
+    res
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn vkCreateDevice(
+    physical_device: vk::PhysicalDevice,
+    p_create_info: *const vk::DeviceCreateInfo, // VkDeviceCreateInfo
+    p_allocator: *const vk::AllocationCallbacks, // VkAllocationCallbacks
+    p_device: *mut vk::Device,
+) -> vk::Result {
+    let real = load_real_vkCreateDevice();
+    let res = real(physical_device, p_create_info, p_allocator, p_device);
+    log(&format!("[vkshim] vkCreateDevice -> {res}"));
+    if res.result().is_ok() {
+        let dev = *p_device;
+        let _ = PHYSICAL_DEVICE_HANDLE.set(physical_device);
+        let _ = DEVICE_HANDLE.set(dev);
+        log(&format!(
+            "[vkshim] captured VkPhysicalDevice = {physical_device:p}, VkDevice = {dev:p}"
+        ));
+    }
+    res
+}
+
+unsafe fn load_real_vkGetDeviceProcAddr() -> Option<VkGetDeviceProcAddr> {
+    if let Some(cached) = REAL_VK_GET_DEVICE_PROC_ADDR.get() {
+        return *cached;
+    }
+
+    let resolved: Option<VkGetDeviceProcAddr> = {
+        let handle = get_vulkan_handle();
+        let name = CString::new("vkGetDeviceProcAddr").unwrap();
+        let sym = dlsym(handle, name.as_ptr());
+        if !sym.is_null() {
+            log("[vkshim] resolved vkGetDeviceProcAddr via dlsym");
+            let fp: VkGetDeviceProcAddr = std::mem::transmute(sym);
+            Some(fp)
+        } else {
+            None
+        }
+    };
+
+    REAL_VK_GET_DEVICE_PROC_ADDR.set(resolved).ok();
+    *REAL_VK_GET_DEVICE_PROC_ADDR.get().unwrap()
+}
+
+unsafe fn load_real_vkCreateInstance() -> PFN_vkCreateInstance {
+    *REAL_VK_CREATE_INSTANCE.get_or_init(|| {
+        let handle = get_vulkan_handle();
+        let name = std::ffi::CString::new("vkCreateInstance").unwrap();
+        let sym = dlsym(handle, name.as_ptr());
+        if sym.is_null() {
+            let err = dlerror();
+            let msg = if !err.is_null() {
+                std::ffi::CStr::from_ptr(err).to_string_lossy().into_owned()
+            } else {
+                "<no dlerror>".to_string()
+            };
+            log(&format!(
+                "[vkshim] FATAL: dlsym(vkCreateInstance) = NULL: {msg}"
+            ));
+            std::process::abort();
+        }
+        std::mem::transmute(sym)
+    })
+}
+
+unsafe fn load_real_vkCreateDevice() -> PFN_vkCreateDevice {
+    *REAL_VK_CREATE_DEVICE.get_or_init(|| {
+        let handle = get_vulkan_handle();
+        let name = std::ffi::CString::new("vkCreateDevice").unwrap();
+        let sym = dlsym(handle, name.as_ptr());
+        if sym.is_null() {
+            let err = dlerror();
+            let msg = if !err.is_null() {
+                std::ffi::CStr::from_ptr(err).to_string_lossy().into_owned()
+            } else {
+                "<no dlerror>".to_string()
+            };
+            log(&format!(
+                "[vkshim] FATAL: dlsym(vkCreateDevice) = NULL: {msg}"
+            ));
+            std::process::abort();
+        }
+        std::mem::transmute(sym)
+    })
+}
+
+unsafe fn load_real_vkCreateCommandPool() -> PFN_vkCreateCommandPool {
+    *REAL_VK_CREATE_COMMAND_POOL.get_or_init(|| {
+        let handle = get_vulkan_handle();
+        let name = std::ffi::CString::new("vkCreateCommandPool").unwrap();
+        let sym = dlsym(handle, name.as_ptr());
+        if sym.is_null() {
+            let err = dlerror();
+            let msg = if !err.is_null() {
+                std::ffi::CStr::from_ptr(err).to_string_lossy().into_owned()
+            } else {
+                "<no dlerror>".to_string()
+            };
+            log(&format!(
+                "[vkshim] FATAL: dlsym(vkCreateCommandPool) = NULL: {msg}"
+            ));
+            std::process::abort();
+        }
+        std::mem::transmute(sym)
+    })
+}
+
+// --------- exported interposed functions ---------
+
+/// Our interposed vkGetDeviceProcAddr
+#[no_mangle]
+pub unsafe extern "system" fn vkGetDeviceProcAddr(
+    device: vk::Device,
+    p_name: *const c_char,
+) -> PFN_vkVoidFunction {
+    let real_opt = load_real_vkGetDeviceProcAddr();
+
+    let name = if !p_name.is_null() {
+        CStr::from_ptr(p_name).to_string_lossy().into_owned()
+    } else {
+        "<null>".to_string()
+    };
+
+    log(&format!("[vkshim] vkGetDeviceProcAddr(\"{name}\")"));
+
+    if let Some(real) = real_opt {
+        let fp = real(device, p_name);
+
+        // ---- hook vkGetDeviceQueue ----
+        if name == "vkGetDeviceQueue" {
+            if let Some(f) = fp {
+                let typed: PFN_vkGetDeviceQueue = std::mem::transmute(f);
+                let _ = REAL_VK_GET_DEVICE_QUEUE.set(typed);
+                log("[vkshim] hooked vkGetDeviceQueue");
+                return Some(std::mem::transmute(my_vkGetDeviceQueue as *const ()));
+            }
+            return fp;
+        }
+
+        // ---- hook vkCreateCommandPool ----
+        if name == "vkCreateCommandPool" {
+            if let Some(f) = fp {
+                let typed: PFN_vkCreateCommandPool = std::mem::transmute(f);
+                let _ = REAL_VK_CREATE_COMMAND_POOL.set(typed);
+                log("[vkshim] hooked vkCreateCommandPool");
+                return Some(std::mem::transmute(my_vkCreateCommandPool as *const ()));
+            }
+            return fp;
+        }
+
+        // ---- hook vkCreateRenderPass ----
+        if name == "vkCreateRenderPass2KHR" {
+            if let Some(f) = fp {
+                let typed: PFN_vkCreateRenderPass2 = std::mem::transmute(f);
+                let _ = REAL_VK_CREATE_RENDER_PASS2KHR.set(typed);
+                log("[vkshim] hooked vkCreateRenderPass2");
+                return Some(std::mem::transmute(my_vkCreateRenderPass2KHR as *const ()));
+            }
+            return fp;
+        }
+
+        if name == "vkCmdBeginRenderPass" {
+            if let Some(f) = fp {
+                let typed: PFN_vkCmdBeginRenderPass = std::mem::transmute(f);
+                let _ = REAL_VK_CMD_BEGIN_RENDER_PASS.set(typed);
+                log(&format!("[vkshim] hooked vkCmdBeginRenderPass"));
+                return Some(std::mem::transmute(my_vkCmdBeginRenderPass as *const ()));
+            }
+            return fp;
+        }
+
+        if name == "vkCmdEndRenderPass" {
+            if let Some(f) = fp {
+                let typed: PFN_vkCmdEndRenderPass = std::mem::transmute(f);
+                let _ = REAL_VK_CMD_END_RENDER_PASS.set(typed);
+                log(&format!("[vkshim] hooked vkCmdEndRenderPass"));
+                return Some(std::mem::transmute(my_vkCmdEndRenderPass as *const ()));
+            }
+            return fp;
+        }
+
+        if name == "vkCreateSwapchainKHR" {
+            if let Some(f) = fp {
+                let typed: PFN_vkCreateSwapchainKHR = std::mem::transmute(f);
+                let _ = REAL_VK_CREATE_SWAPCHAIN.set(typed);
+                log(&format!("[vkshim] hooked vkCreateSwapchainKHR"));
+                return Some(std::mem::transmute(my_vkCreateSwapchainKHR as *const ()));
+            }
+            return fp;
+        }
+
+        // ---- Hook vkQueueSubmit ----
+        // if name == "vkQueueSubmit" {
+        //     if let Some(f) = fp {
+        //         let typed: PFN_vkQueueSubmit = std::mem::transmute(f);
+        //         let _ = REAL_VK_QUEUE_SUBMIT.set(typed);
+        //         log("[vkshim] hooked vkQueueSubmit");
+
+        //         // Return our wrapper instead of the real function pointer.
+        //         return Some(std::mem::transmute(my_vkQueueSubmit as *const ()));
+        //     } else {
+        //         log("[vkshim] WARNING: vkGetDeviceProcAddr returned NULL for vkQueueSubmit");
+        //         return fp;
+        //     }
+        // }
+
+        // (in the future you can also add a vkQueuePresentKHR hook here if it ever shows up)
+
+        fp
+    } else {
+        None
+    }
+}
+
+unsafe fn get_or_create_overlay_command_pool() -> Option<vk::CommandPool> {
+    if let Some(pool) = OVERLAY_COMMAND_POOL.get() {
+        return Some(*pool);
+    }
+
+    let device = *DEVICE_HANDLE.get()?; // from vkCreateDevice wrapper
+    let family_index = *GRAPHICS_QUEUE_FAMILY_INDEX.get()?; // from vkGetDeviceQueue wrapper
+
+    //let handle = get_vulkan_handle(); // your dlopen(libvulkan) handle
+
+    // Load the real vkCreateCommandPool
+    let real = load_real_vkCreateCommandPool(); // you already have this helper
+
+    let ci = vk::CommandPoolCreateInfo {
+        s_type: StructureType::GRAPHICS_PIPELINE_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+        queue_family_index: family_index,
+    };
+
+    let mut pool: vk::CommandPool = vk::CommandPool::null();
+    let res = real(device, &ci, std::ptr::null(), &mut pool);
+    if !res.result().is_ok() {
+        log(&format!(
+            "[vkshim] failed to create overlay command pool: res={res}"
+        ));
+        return None;
+    }
+
+    log(&format!("[vkshim] created overlay command pool = {pool:p}"));
+    let _ = OVERLAY_COMMAND_POOL.set(pool);
+    Some(pool)
+}
+
+fn update_overlay_render_pass_from_hook(new_rp: vk::RenderPass) {
+    VULKAN_OVERLAY.with(|cell| {
+        let mut opt = cell.borrow_mut();
+
+        // if present_rps().lock().unwrap().contains(&new_rp) {
+        // If the overlay hasn't even been created yet, just remember this RP.
+        if opt.is_none() {
+            opt.replace(VulkanOverlay {
+                renderer: None,
+                current_render_pass: vk::RenderPass::null(),
+                pending_render_pass: Some(new_rp),
+            });
+            return;
+        }
+
+        let ov = opt.as_mut().unwrap();
+
+        // If renderer not ready yet, just stash it.
+        if ov.renderer.is_none() {
+            ov.pending_render_pass = Some(new_rp);
+            return;
+        }
+        // }
+    });
 }
