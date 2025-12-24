@@ -36,6 +36,7 @@ jobs:
           makepkg -si --noconfirm
           cp *.pkg.tar.zst ../AppImage/
           cd ../AppImage/
+          tar -xvf $(ls *.pkg.tar.zst | grep -v debug)
           chmod +x AppImage.sh
           ./AppImage.sh
           EOF
