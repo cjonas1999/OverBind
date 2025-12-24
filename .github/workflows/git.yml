@@ -40,4 +40,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: arch-package
-          path: "*.pkg.tar.*"
+          path: |
+            pkg/GIT/*
