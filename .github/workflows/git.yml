@@ -1,4 +1,4 @@
-name: Build Arch Package (Git)
+name: Build Arch Package & AppImage (Git)
 
 on:
   workflow_dispatch:
