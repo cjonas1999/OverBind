@@ -12,7 +12,7 @@ export ADD_HOOKS="self-updater.bg.hook"
 #export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|*$ARCH.AppImage.zsync"
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
 export DESKTOP=./usr/share/applications/OverBind.desktop
-export ICON=./usr/share/applications/hicolor/256x256@2/apps/OverBind.png
+export ICON=./usr/share/icons/hicolor/256x256@2/apps/OverBind.png
 export DEPLOY_OPENGL=0
 export DEPLOY_VULKAN=0
 export DEPLOY_DOTNET=0
@@ -26,6 +26,9 @@ chmod +x ./quick-sharun
 
 # Point to binaries
 ./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu
+
+# Add icons
+cp -r ./usr/lib/OverBind ./AppDir/lib/OverBind
 
 # Make AppImage
 ./quick-sharun --make-appimage
