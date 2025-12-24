@@ -34,6 +34,10 @@ jobs:
           set -e
           cd pkg/GIT
           makepkg -si --noconfirm
+          cp *.pkg.tar.zst ../AppImage/
+          cd ../AppImage/
+          chmod +x AppImage.sh
+          ./AppImage.sh
           EOF
 
       - name: Upload package artifact
@@ -42,3 +46,4 @@ jobs:
           name: arch-package
           path: |
             pkg/GIT/*.pkg.tar.zst
+            pkg/AppImage/dist/*.AppImage
