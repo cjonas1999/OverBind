@@ -50,7 +50,7 @@ pkgver() {
 
 build() {
   cd "$_pkgsrc"
-  npm install
+  npm ci
 
   # ignore error related to updater plugin
   cargo-tauri build --bundles deb || :
