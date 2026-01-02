@@ -800,20 +800,22 @@ fn handle_key_event(key_code: u16, key_is_down: bool) {
 
 fn send_keyboard_event(key_code: u16, key_is_down: bool) {
     let mut shared_state = SHARED_STATE.write().unwrap();
-    if key_is_down {
-        shared_state
-            .uinput_keyboard
-            .as_mut()
-            .unwrap()
-            .press(&evdev_enum_to_uinput_enum(key_code).unwrap())
-            .unwrap();
-    } else {
-        shared_state
-            .uinput_keyboard
-            .as_mut()
-            .unwrap()
-            .release(&evdev_enum_to_uinput_enum(key_code).unwrap())
-            .unwrap();
+    if let Some(uinput_code) = evdev_enum_to_uinput_enum(key_code) {
+        if key_is_down {
+            shared_state
+                .uinput_keyboard
+                .as_mut()
+                .unwrap()
+                .press(&uinput_code)
+                .unwrap();
+        } else {
+            shared_state
+                .uinput_keyboard
+                .as_mut()
+                .unwrap()
+                .release(&uinput_code)
+                .unwrap();
+        }
     }
 }
 
