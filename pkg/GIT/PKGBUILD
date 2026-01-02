@@ -1,0 +1,64 @@
+# Maintainer:
+
+: ${CARGO_HOME:=$SRCDEST/cargo-home}
+: ${CARGO_TARGET_DIR:=target}
+: ${RUSTUP_TOOLCHAIN:=stable}
+export CARGO_HOME CARGO_TARGET_DIR RUSTUP_TOOLCHAIN
+
+_pkgname="overbind"
+pkgname="$_pkgname-git"
+pkgver=1.5.1.r11.ge007f41
+pkgrel=1
+pkgdesc="A Tauri-based input remapping tool"
+url="https://github.com/cjonas1999/OverBind"
+license=('MIT')
+arch=('x86_64')
+
+depends=(
+  'gtk3'
+  'libayatana-appindicator'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'cargo'
+  'cargo-tauri'
+  'git'
+  'npm'
+)
+
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+
+options=('!lto')
+
+_pkgsrc="$_pkgname"
+source=("$_pkgsrc"::"git+$url.git")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$_pkgsrc/src-tauri"
+
+  # don't try to bundle bin before it's built
+  rm -f tauri.linux.conf.json
+}
+
+pkgver() {
+  cd "$_pkgsrc"
+  git describe --long --tags --abbrev=7 --exclude='*[a-zA-Z][a-zA-Z]*' \
+    | sed -E 's/^[^0-9]*//;s/([^-]*-g)/r\1/;s/-/./g'
+}
+
+build() {
+  cd "$_pkgsrc"
+  npm ci
+
+  # ignore error related to updater plugin
+  cargo-tauri build --bundles deb || :
+}
+
+package() {
+  cd "$_pkgsrc"
+  cp -r "src-tauri/${CARGO_TARGET_DIR}/release/bundle/deb/OverBind_${pkgver%%.r*}_amd64/data"/* "$pkgdir/"
+
+  install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname/"
+}
