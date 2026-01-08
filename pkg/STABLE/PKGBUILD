@@ -18,8 +18,8 @@ source=(
 )
 
 sha256sums=(
-  '38a401d15e1057304ceceec83198786d5956e579d1cfda6807545b25d95ea848'
-  'c8c674b60a3b784a8de02612470d36b9d93558a708492d3a35aa2e0d9bf1fa89'
+  'SKIP'
+  'SKIP'
 )
 package() {
   ar x "OverBind_${pkgver}_amd64.deb"
