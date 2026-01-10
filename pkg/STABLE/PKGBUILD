@@ -1,0 +1,47 @@
+# Maintainer Fatih Bakal fatihbakal7@protonmail.com
+
+pkgname=overbind-bin
+pkgver=1.5.2
+pkgrel=1
+pkgdesc="A Rust + Tauri-based input remapping tool"
+arch=('x86_64')
+url="https://github.com/cjonas1999/OverBind"
+license=('MIT')
+depends=('gtk3' 'libayatana-appindicator' 'webkit2gtk-4.1' 'glibc')
+provides=('overbind')
+conflicts=('overbind-git')
+options=(!strip)  # Avoid stripping just in case the binary is pre-stripped
+
+source=(
+  "https://github.com/cjonas1999/OverBind/releases/download/${pkgver}/OverBind_${pkgver}_amd64.deb"
+  "${pkgname}-${pkgver}-LICENSE::https://raw.githubusercontent.com/cjonas1999/OverBind/refs/tags/${pkgver}/LICENSE"
+)
+
+sha256sums=(
+  'SKIP'
+  'SKIP'
+)
+package() {
+  ar x "OverBind_${pkgver}_amd64.deb"
+  tar -xf data.tar.*
+
+  # Install the main binary
+  install -Dm755 usr/bin/OverBind "$pkgdir/usr/bin/OverBind"
+
+  # Install additional binaries
+  install -Dm755 usr/bin/cursor-overlay "$pkgdir/usr/bin/cursor-overlay"
+  install -Dm755 usr/bin/cursor-overlay-x86_64-unknown-linux-gnu "$pkgdir/usr/bin/cursor-overlay-x86_64-unknown-linux-gnu"
+
+  # Install library assets (optional runtime icons)
+  install -Dm644 usr/lib/OverBind/icons/tray_icon_off.png "$pkgdir/usr/lib/OverBind/icons/tray_icon_off.png"
+  install -Dm644 usr/lib/OverBind/icons/tray_icon_on.png "$pkgdir/usr/lib/OverBind/icons/tray_icon_on.png"
+
+  # Install .desktop file
+  install -Dm644 usr/share/applications/OverBind.desktop "$pkgdir/usr/share/applications/OverBind.desktop"
+
+  # Install icons
+  install -Dm644 usr/share/icons/hicolor/128x128/apps/OverBind.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/OverBind.png"
+  install -Dm644 usr/share/icons/hicolor/32x32/apps/OverBind.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/OverBind.png"
+  install -Dm644 usr/share/icons/hicolor/256x256@2/apps/OverBind.png "$pkgdir/usr/share/icons/hicolor/256x256@2/apps/OverBind.png"
+  install -Dm644 "${pkgname}-${pkgver}-LICENSE" "$pkgdir/usr/share/licenses/overbind/LICENSE"
+}
