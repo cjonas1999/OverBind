@@ -64,6 +64,9 @@ static KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, KeyState>>>> =
 static OPPOSITE_KEY_STATES: Lazy<Arc<RwLock<HashMap<u32, OppositeKey>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
+static REBIND_COUNTS: Lazy<Arc<RwLock<HashMap<u32, u8>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
 struct SharedState {
     target: Option<vigem_client::Xbox360Wired<Client>>,
     hook_handle: Option<HHOOK>,
@@ -129,6 +132,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
             serde_json::from_str(&contents).map_err(|e| e.to_string())?;
         let mut key_states = HashMap::new();
         let mut opposite_key_states = HashMap::new();
+        let mut rebind_counts: HashMap<u32, u8> = HashMap::new();
 
         for item in &data {
             let keycode =
@@ -144,6 +148,10 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
                     "Keycode: {:?}, ResultType: {:?}, ResultValue {:?}",
                     keycode, key_state.result_type, key_state.result_value
                 );
+            }
+
+            if item.result_type == "keyboard" {
+                rebind_counts.insert(item.result_value as u32, 0);
             }
         }
 
@@ -187,6 +195,7 @@ impl KeyInterceptorTrait for WindowsKeyInterceptor {
 
         *KEY_STATES.write().unwrap() = key_states;
         *OPPOSITE_KEY_STATES.write().unwrap() = opposite_key_states;
+        *REBIND_COUNTS.write().unwrap() = rebind_counts;
 
         self.should_run.store(true, Ordering::SeqCst);
         unsafe extern "system" fn win_event_proc(
@@ -422,13 +431,18 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
         let shared_state = SHARED_STATE.write().unwrap();
         disable_keyboard = shared_state.block_kb_on_controller
     }
+    
+    let mut key_state_changed = true;
 
     // Update Key State
     let mut key_event_flag = None;
     {
         let mut key_states = KEY_STATES.write().unwrap();
         match key_states.get_mut(&key) {
-            Some(state) => state.is_pressed = key_is_down,
+            Some(state) => {
+                key_state_changed = key_is_down != state.is_pressed;
+                state.is_pressed = key_is_down;
+            },
             _ => (),
         }
         key_event_flag = Some(if key_is_down {
@@ -444,28 +458,44 @@ unsafe extern "system" fn low_level_keyboard_proc_callback(
             break 'rebind;
         }
         let key_states = KEY_STATES.read().unwrap();
+        let mut rebind_counts = REBIND_COUNTS.write().unwrap();
+
         if let Some(flag) = key_event_flag {
             if let Some(key_state) = key_states.get(&key) {
                 if key_state.result_type == "keyboard" {
                     let vk_code = key_state.result_value as u16;
+                    // log::info!("key: {:?} in {:?}", key_state.result_value as u32, rebind_counts);
+                    let rebind_held_count = rebind_counts.get_mut(&(key_state.result_value as u32)).expect("rebind not properly counted");
+                    let mut send_update = true;
 
-                    let ki = KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(vk_code),
-                        wScan: 0,
-                        dwFlags: flag,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    };
-
-                    let input = INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 { ki },
-                    };
-
-                    unsafe {
-                        SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                    if key_is_down && key_state_changed {
+                        *rebind_held_count += 1;
+                    }
+                    else if !key_is_down && key_state_changed {
+                        if *rebind_held_count == 1 {
+                            send_update = false;
+                        }
+                        *rebind_held_count -= 1;
                     }
 
+                    if send_update {
+                        let ki = KEYBDINPUT {
+                            wVk: VIRTUAL_KEY(vk_code),
+                            wScan: 0,
+                            dwFlags: flag,
+                            time: 0,
+                            dwExtraInfo: 0,
+                        };
+
+                        let input = INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 { ki },
+                        };
+
+                        unsafe {
+                            SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                        }
+                    }
                     return LRESULT(1);
                 }
             }
