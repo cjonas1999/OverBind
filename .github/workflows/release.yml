@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. v1.5.3 or 1.5.3)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -15,16 +21,46 @@ jobs:
       version: ${{ steps.extract.outputs.version }}
       should_release: ${{ steps.extract.outputs.should_release }}
     steps:
-      - name: Extract version from commit message
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+
+      - name: Determine version to build
         id: extract
         env:
           MSG: ${{ github.event.head_commit.message }}
+          INPUT: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # workflow_dispatch: use explicit input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${INPUT#v}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # commit message starts with a version: start a fresh release
           if [[ "$MSG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
-          else
+            exit 0
+          fi
+
+          # no version in message: check if the latest tag has been shipped yet
+          LATEST_TAG=$(git tag --sort=-version:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          IS_DRAFT=$(gh release view "$LATEST_TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
+          if [ "$IS_DRAFT" = "false" ]; then
+            # published release — nothing pending
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            # draft or no release yet — still pending, keep building
+            echo "version=${LATEST_TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
   version-and-tag:
@@ -36,13 +72,27 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if tag already exists
+        id: tag_check
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.tag_check.outputs.exists == 'false'
         with:
           node-version: lts/*
 
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.tag_check.outputs.exists == 'false'
 
       - name: Bump versions
+        if: steps.tag_check.outputs.exists == 'false'
         env:
           VERSION: ${{ needs.check.outputs.version }}
         run: |
@@ -52,9 +102,11 @@ jobs:
           sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$VERSION\"/}" src-tauri/Cargo.toml
 
       - name: Update Cargo.lock
+        if: steps.tag_check.outputs.exists == 'false'
         run: cargo fetch --manifest-path src-tauri/Cargo.toml
 
       - name: Commit, tag, and push
+        if: steps.tag_check.outputs.exists == 'false'
         env:
           VERSION: ${{ needs.check.outputs.version }}
         run: |
@@ -64,6 +116,14 @@ jobs:
           git commit -m "chore: release v$VERSION [skip ci]"
           git tag "v$VERSION"
           git push origin HEAD:master --tags
+
+      - name: Move tag to latest commit
+        if: steps.tag_check.outputs.exists == 'true'
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          git tag -f "v$VERSION"
+          git push origin --force "refs/tags/v$VERSION"
 
   build-linux:
     needs: [check, version-and-tag]
@@ -98,6 +158,9 @@ jobs:
           workspaces: ./src-tauri -> target
 
       - run: npm ci
+
+      - name: Build cursor overlay
+        run: cargo build --release --bin cursor-overlay-x86_64-unknown-linux-gnu --manifest-path src-tauri/Cargo.toml
 
       - name: Build Linux bundles
         run: npm run tauri build -- --bundles deb,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
