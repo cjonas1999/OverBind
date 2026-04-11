@@ -1,7 +1,7 @@
 # Maintainer Fatih Bakal fatihbakal7@protonmail.com
 
 pkgname=overbind-bin
-pkgver=1.5.2
+pkgver=1.5.3
 pkgrel=1
 pkgdesc="A Rust + Tauri-based input remapping tool"
 arch=('x86_64')
