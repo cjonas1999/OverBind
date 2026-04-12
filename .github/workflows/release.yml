@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g. v1.5.3 or 1.5.3)'
+        description: 'Version to release (e.g. 1.5.3)'
         required: true
         type: string
 
@@ -15,57 +15,8 @@ permissions:
   contents: write
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.extract.outputs.version }}
-      should_release: ${{ steps.extract.outputs.should_release }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
-
-      - name: Determine version to build
-        id: extract
-        env:
-          MSG: ${{ github.event.head_commit.message }}
-          INPUT: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # workflow_dispatch: use explicit input
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${INPUT#v}" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # commit message starts with a version: start a fresh release
-          if [[ "$MSG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # no version in message: check if the latest tag has been shipped yet
-          LATEST_TAG=$(git tag --sort=-version:refname | head -n1)
-          if [ -z "$LATEST_TAG" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          IS_DRAFT=$(gh release view "$LATEST_TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
-          if [ "$IS_DRAFT" = "false" ]; then
-            # published release — nothing pending
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-          else
-            # draft or no release yet — still pending, keep building
-            echo "version=${LATEST_TAG#v}" >> "$GITHUB_OUTPUT"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-          fi
-
   version-and-tag:
-    needs: check
-    if: needs.check.outputs.should_release == 'true'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +26,7 @@ jobs:
       - name: Check if tag already exists
         id: tag_check
         env:
-          VERSION: ${{ needs.check.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           if git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -94,7 +45,7 @@ jobs:
       - name: Bump versions
         if: steps.tag_check.outputs.exists == 'false'
         env:
-          VERSION: ${{ needs.check.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
@@ -108,7 +59,7 @@ jobs:
       - name: Commit, tag, and push
         if: steps.tag_check.outputs.exists == 'false'
         env:
-          VERSION: ${{ needs.check.outputs.version }}
+          VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -117,22 +68,13 @@ jobs:
           git tag "v$VERSION"
           git push origin HEAD:master --tags
 
-      - name: Move tag to latest commit
-        if: steps.tag_check.outputs.exists == 'true'
-        env:
-          VERSION: ${{ needs.check.outputs.version }}
-        run: |
-          git tag -f "v$VERSION"
-          git push origin --force "refs/tags/v$VERSION"
-
   build-linux:
-    needs: [check, version-and-tag]
-    if: needs.check.outputs.should_release == 'true'
+    needs: version-and-tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v${{ needs.check.outputs.version }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.sha }}
 
       - name: Install system dependencies
         run: |
@@ -176,13 +118,12 @@ jobs:
           path: src-tauri/target/release/bundle/appimage/*.AppImage
 
   build-windows:
-    needs: [check, version-and-tag]
-    if: needs.check.outputs.should_release == 'true'
+    needs: version-and-tag
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v${{ needs.check.outputs.version }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -205,8 +146,8 @@ jobs:
           path: src-tauri/target/release/bundle/msi/*.msi
 
   release:
-    needs: [check, build-linux, build-windows]
-    if: needs.check.outputs.should_release == 'true'
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -215,7 +156,7 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.check.outputs.version }}
+          tag_name: v${{ inputs.version }}
           draft: true
           files: |
             artifacts/linux-deb/*.deb
