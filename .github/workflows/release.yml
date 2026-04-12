@@ -70,6 +70,7 @@ jobs:
 
   build-linux:
     needs: version-and-tag
+    if: needs.version-and-tag.result == 'success' || needs.version-and-tag.result == 'skipped'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -119,6 +120,7 @@ jobs:
 
   build-windows:
     needs: version-and-tag
+    if: needs.version-and-tag.result == 'success' || needs.version-and-tag.result == 'skipped'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
