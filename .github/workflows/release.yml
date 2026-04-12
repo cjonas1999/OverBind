@@ -51,6 +51,8 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
           sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$VERSION\"/}" src-tauri/Cargo.toml
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" pkg/GIT/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" pkg/STABLE/PKGBUILD
 
       - name: Update Cargo.lock
         if: steps.tag_check.outputs.exists == 'false'
@@ -63,7 +65,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock pkg/GIT/PKGBUILD pkg/STABLE/PKGBUILD
           git commit -m "chore: release v$VERSION [skip ci]"
           git tag "v$VERSION"
           git push origin HEAD:master --tags
@@ -122,6 +124,48 @@ jobs:
           name: linux-appimage
           path: src-tauri/target/release/bundle/appimage/*.AppImage
 
+  build-arch:
+    needs: version-and-tag
+    if: ${{ !failure() }}
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install base dependencies
+        run: |
+          pacman -Syu --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm base-devel git sudo wget zsync
+
+      - name: Create build user
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.sha }}
+
+      - name: Fix permissions
+        run: chown -R builder:builder .
+
+      - name: Build package and AppImage
+        run: |
+          sudo -u builder bash <<'EOF'
+          set -e
+          cd pkg/GIT
+          makepkg -si --noconfirm
+          cp *.pkg.tar.zst ../AppImage/
+          cd ../AppImage/
+          tar -xvf $(ls *.pkg.tar.zst | grep -v debug)
+          chmod +x AppImage.sh
+          ./AppImage.sh
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-appimage
+          path: pkg/AppImage/dist/*.AppImage
+
   build-windows:
     needs: version-and-tag
     if: ${{ !failure() }}
@@ -153,7 +197,7 @@ jobs:
 
   release:
     if: github.event_name == 'workflow_dispatch'
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-arch, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -167,4 +211,5 @@ jobs:
           files: |
             artifacts/linux-deb/*.deb
             artifacts/linux-appimage/*.AppImage
+            artifacts/arch-appimage/*.AppImage
             artifacts/windows-msi/*.msi

@@ -52,8 +52,7 @@ build() {
   cd "$_pkgsrc"
   npm ci
 
-  # ignore error related to updater plugin
-  cargo-tauri build --bundles deb || :
+  cargo-tauri build --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
 }
 
 package() {
