@@ -103,7 +103,11 @@ jobs:
       - run: npm ci
 
       - name: Build cursor overlay
-        run: cargo build --release --bin cursor-overlay-x86_64-unknown-linux-gnu --manifest-path src-tauri/Cargo.toml
+        run: |
+          TARGET=$(rustc -vV | sed -n 's/host: //p')
+          mkdir -p src-tauri/target/release
+          touch "src-tauri/target/release/cursor-overlay-$TARGET"
+          cargo build --release --bin "cursor-overlay-$TARGET" --manifest-path src-tauri/Cargo.toml
 
       - name: Build Linux bundles
         run: npm run tauri build -- --bundles deb,appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
