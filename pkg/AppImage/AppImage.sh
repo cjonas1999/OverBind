@@ -8,7 +8,6 @@ set -eu
 ARCH="$(uname -m)"
 SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/753b3ba3c77a573f8c2eeb0b397752df2d3235df/useful-tools/quick-sharun.sh"
 
-export ADD_HOOKS="self-updater.bg.hook"
 #export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|*$ARCH.AppImage.zsync"
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
 export DESKTOP=./usr/share/applications/OverBind.desktop
