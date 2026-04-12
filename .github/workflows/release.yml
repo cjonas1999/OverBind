@@ -95,6 +95,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -145,10 +146,18 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.sha }}
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            pkg/GIT/cargo-home
+            /var/cache/pacman/pkg
+          key: arch-${{ hashFiles('src-tauri/Cargo.lock', 'pkg/GIT/PKGBUILD') }}
+          restore-keys: arch-
+
       - name: Fix permissions
         run: chown -R builder:builder .
 
-      - name: Build package and AppImage
+      - name: Build package with makepkg
         run: |
           sudo -u builder bash <<'EOF'
           set -e
@@ -157,9 +166,13 @@ jobs:
           cp *.pkg.tar.zst ../AppImage/
           cd ../AppImage/
           tar -xvf $(ls *.pkg.tar.zst | grep -v debug)
+          EOF
+
+      - name: Build AppImage
+        run: |
+          cd pkg/AppImage
           chmod +x AppImage.sh
           ./AppImage.sh
-          EOF
 
       - uses: actions/upload-artifact@v4
         with:
@@ -178,6 +191,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
 
