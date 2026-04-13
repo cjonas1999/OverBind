@@ -204,7 +204,7 @@ jobs:
       - name: Build Windows bundles
         run: npm run tauri build -- --bundles msi --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: windows-msi
           path: src-tauri/target/release/bundle/msi/*.msi
