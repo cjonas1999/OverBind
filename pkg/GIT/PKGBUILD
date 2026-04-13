@@ -7,7 +7,7 @@ export CARGO_HOME CARGO_TARGET_DIR RUSTUP_TOOLCHAIN
 
 _pkgname="overbind"
 pkgname="$_pkgname-git"
-pkgver=1.5.2.r2.g49fe1ac
+pkgver=1.5.5
 pkgrel=1
 pkgdesc="A Tauri-based input remapping tool"
 url="https://github.com/cjonas1999/OverBind"
