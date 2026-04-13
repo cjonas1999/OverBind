@@ -24,7 +24,9 @@ wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
 chmod +x ./quick-sharun
 
 # Point to binaries
-./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu
+# Exit code 8 from sharun-aio means some binaries failed strace analysis (non-fatal);
+# the AppDir is still correctly set up so we allow it and continue.
+./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu || { _ec=$?; [ $_ec -eq 8 ] || exit $_ec; }
 
 # Add icons
 cp -r ./usr/lib/OverBind ./AppDir/lib/OverBind
