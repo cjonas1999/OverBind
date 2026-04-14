@@ -154,7 +154,11 @@ jobs:
           restore-keys: arch-
 
       - name: Install build dependencies
-        run: pacman -S --noconfirm --needed base-devel wget zsync
+        run: |
+          pacman -S --noconfirm --needed \
+            base-devel wget zsync \
+            cargo cargo-tauri npm \
+            gtk3 libayatana-appindicator webkit2gtk-4.1
 
       - name: Fix permissions
         run: chown -R builder:builder .
@@ -164,7 +168,7 @@ jobs:
           runuser -u builder -- bash <<'EOF'
           set -e
           cd pkg/GIT
-          makepkg -si --noconfirm
+          makepkg --noconfirm
           cp *.pkg.tar.zst ../AppImage/
           cd ../AppImage/
           tar -xvf $(ls *.pkg.tar.zst | grep -v debug)
