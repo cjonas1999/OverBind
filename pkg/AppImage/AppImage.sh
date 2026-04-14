@@ -6,7 +6,7 @@
 set -eu
 
 ARCH="$(uname -m)"
-SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/753b3ba3c77a573f8c2eeb0b397752df2d3235df/useful-tools/quick-sharun.sh"
+SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/bc2acd96e07614d36ad9b206b053f7cf45e41720/useful-tools/quick-sharun.sh"
 
 #export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|*$ARCH.AppImage.zsync"
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
@@ -23,13 +23,8 @@ rm -rf AppDir dist appinfo
 wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
 chmod +x ./quick-sharun
 
-# Point to binaries
-# Exit code 8 from sharun-aio means some binaries failed strace analysis (non-fatal);
-# the AppDir is still correctly set up so we allow it and continue.
-./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu || { _ec=$?; [ $_ec -eq 8 ] || exit $_ec; }
-
-# Add icons
-cp -r ./usr/lib/OverBind ./AppDir/lib/OverBind
+# Point to binaries and resource directories
+./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu ./usr/lib/OverBind
 
 # Make AppImage
 ./quick-sharun --make-appimage

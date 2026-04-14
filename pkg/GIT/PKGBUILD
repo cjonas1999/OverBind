@@ -1,7 +1,7 @@
 # Maintainer:
 
 : ${CARGO_HOME:=$SRCDEST/cargo-home}
-: ${CARGO_TARGET_DIR:=target}
+: ${CARGO_TARGET_DIR:=$SRCDEST/cargo-target}
 : ${RUSTUP_TOOLCHAIN:=stable}
 export CARGO_HOME CARGO_TARGET_DIR RUSTUP_TOOLCHAIN
 
@@ -57,7 +57,7 @@ build() {
 
 package() {
   cd "$_pkgsrc"
-  cp -r "src-tauri/${CARGO_TARGET_DIR}/release/bundle/deb/OverBind_${pkgver%%.r*}_amd64/data"/* "$pkgdir/"
+  cp -r "$CARGO_TARGET_DIR/release/bundle/deb/OverBind_${pkgver%%.r*}_amd64/data"/* "$pkgdir/"
 
   install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname/"
 }

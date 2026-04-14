@@ -132,10 +132,10 @@ jobs:
     container:
       image: archlinux:latest
     steps:
-      - name: Install base dependencies
+      - name: Bootstrap keyring and git
         run: |
           pacman -Syu --noconfirm archlinux-keyring
-          pacman -Syu --noconfirm base-devel git sudo wget zsync
+          pacman -S --noconfirm --needed git
 
       - name: Create build user
         run: |
@@ -150,9 +150,13 @@ jobs:
         with:
           path: |
             pkg/GIT/cargo-home
+            pkg/GIT/cargo-target
             /var/cache/pacman/pkg
           key: arch-${{ hashFiles('src-tauri/Cargo.lock', 'pkg/GIT/PKGBUILD') }}
           restore-keys: arch-
+
+      - name: Install build dependencies
+        run: pacman -S --noconfirm --needed base-devel sudo wget zsync
 
       - name: Fix permissions
         run: chown -R builder:builder .
