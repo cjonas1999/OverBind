@@ -138,9 +138,7 @@ jobs:
           pacman -S --noconfirm --needed git
 
       - name: Create build user
-        run: |
-          useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+        run: useradd -m builder
 
       - uses: actions/checkout@v6
         with:
@@ -156,14 +154,14 @@ jobs:
           restore-keys: arch-
 
       - name: Install build dependencies
-        run: pacman -S --noconfirm --needed base-devel sudo wget zsync
+        run: pacman -S --noconfirm --needed base-devel wget zsync
 
       - name: Fix permissions
         run: chown -R builder:builder .
 
       - name: Build package with makepkg
         run: |
-          sudo -u builder bash <<'EOF'
+          runuser -u builder -- bash <<'EOF'
           set -e
           cd pkg/GIT
           makepkg -si --noconfirm
