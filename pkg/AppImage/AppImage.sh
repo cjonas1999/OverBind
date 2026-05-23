@@ -7,6 +7,7 @@ set -eu
 
 ARCH="$(uname -m)"
 SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/main/useful-tools/quick-sharun.sh"
+DEBLOATED_PKGS="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/get-debloated-pkgs.sh"
 
 #export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|*$ARCH.AppImage.zsync"
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
@@ -20,8 +21,12 @@ export DEPLOY_DOTNET=0
 rm -rf AppDir dist appinfo
 
 # ADD LIBRARIES
+wget --retry-connrefused --tries=30 "$DEBLOATED_PKGS" -O ./get-debloated-pkgs
 wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
-chmod +x ./quick-sharun
+chmod +x ./quick-sharun ./get-debloated-pkgs
+
+# Debloated pkgs
+./get-debloated-pkgs -add-common --prefer-nano
 
 # Point to binaries and resource directories
 ./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu ./usr/lib/OverBind
