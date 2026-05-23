@@ -158,7 +158,7 @@ jobs:
           pacman -S --noconfirm --needed \
             base-devel wget zsync \
             cargo cargo-tauri npm \
-            gtk3 libayatana-appindicator webkit2gtk-4.1
+            gtk3 libayatana-appindicator webkit2gtk-4.1 xorg-server-xvfb
 
       - name: Fix permissions
         run: chown -R builder:builder .
