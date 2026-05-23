@@ -13,7 +13,6 @@ DEBLOATED_PKGS="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImage
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
 export DESKTOP=./usr/share/applications/OverBind.desktop
 export ICON=./usr/share/icons/hicolor/256x256@2/apps/OverBind.png
-export NO_STRIP=1
 export DEPLOY_OPENGL=0
 export DEPLOY_VULKAN=0
 export DEPLOY_DOTNET=0
@@ -30,7 +29,10 @@ chmod +x ./quick-sharun ./get-debloated-pkgs
 ./get-debloated-pkgs --add-common --prefer-nano
 
 # Point to binaries and resource directories
-./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu ./usr/lib/OverBind
+./quick-sharun \
+        /usr/bin/OverBind        \
+        /usr/bin/cursor-overlay* \
+        /usr/lib/OverBind
 
 # Make AppImage
 ./quick-sharun --make-appimage

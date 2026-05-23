@@ -163,21 +163,16 @@ jobs:
       - name: Fix permissions
         run: chown -R builder:builder .
 
-      - name: Build package with makepkg
+      - name: Build package with makepkg & Build AppImage
         run: |
           runuser -u builder -- bash <<'EOF'
           set -e
           cd pkg/GIT
           makepkg --noconfirm
-          cp *.pkg.tar.zst ../AppImage/
-          cd ../AppImage/
-          tar -xvf $(ls *.pkg.tar.zst | grep -v debug)
           EOF
-
-      - name: Build AppImage
-        run: |
-          cd pkg/AppImage
-          chmod +x AppImage.sh
+          cd pkg/GIT
+          pacman --noconfirm -U ./*.pkg.tar.zst
+          chmod +x ./AppImage.sh
           ./AppImage.sh
 
       - uses: actions/upload-artifact@v6
