@@ -6,7 +6,7 @@
 set -eu
 
 ARCH="$(uname -m)"
-SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/bc2acd96e07614d36ad9b206b053f7cf45e41720/useful-tools/quick-sharun.sh"
+SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/main/useful-tools/quick-sharun.sh"
 
 #export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}|latest|*$ARCH.AppImage.zsync"
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
