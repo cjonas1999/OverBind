@@ -26,7 +26,7 @@ wget --retry-connrefused --tries=30 "$SHARUN" -O ./quick-sharun
 chmod +x ./quick-sharun ./get-debloated-pkgs
 
 # Debloated pkgs
-./get-debloated-pkgs -add-common --prefer-nano
+./get-debloated-pkgs --add-common --prefer-nano
 
 # Point to binaries and resource directories
 ./quick-sharun ./usr/bin/OverBind ./usr/bin/cursor-overlay-$(uname -m)-unknown-linux-gnu ./usr/lib/OverBind
