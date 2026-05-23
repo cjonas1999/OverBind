@@ -172,6 +172,7 @@ jobs:
           EOF
           cd pkg/GIT
           pacman --noconfirm -U ./*.pkg.tar.zst
+          cd ../AppImage
           chmod +x ./AppImage.sh
           ./AppImage.sh
 
