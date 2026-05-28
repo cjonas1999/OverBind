@@ -41,7 +41,7 @@
   },
   "productName": "OverBind",
   "mainBinaryName": "OverBind",
-  "version": "1.5.9",
+  "version": "1.5.6",
   "identifier": "com.github.cjonas1999.overbind",
   "plugins": {
     "updater": {

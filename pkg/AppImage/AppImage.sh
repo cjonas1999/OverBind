@@ -32,6 +32,7 @@ chmod +x ./quick-sharun ./get-debloated-pkgs
 ./quick-sharun \
         /usr/bin/OverBind        \
         /usr/bin/cursor-overlay* \
+        /usr/lib/libayatana-appindicator*.so* \
         /usr/lib/OverBind
 
 # Make AppImage
