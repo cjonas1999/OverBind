@@ -13,7 +13,7 @@ DEBLOATED_PKGS="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImage
 export OUTNAME=OverBind-anylinux-"$ARCH".AppImage
 export DESKTOP=/usr/share/applications/OverBind.desktop
 export ICON=/usr/share/icons/hicolor/256x256@2/apps/OverBind.png
-export DEPLOY_OPENGL=0
+export DEPLOY_OPENGL=1
 export DEPLOY_VULKAN=0
 export DEPLOY_DOTNET=0
 
