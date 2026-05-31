@@ -57,7 +57,7 @@ build() {
 
 package() {
   cd "$_pkgsrc"
-  cp -r "$CARGO_TARGET_DIR/release/bundle/deb/OverBind_${pkgver%%.r*}_amd64/data"/* "$pkgdir/"
+  cp -r "$CARGO_TARGET_DIR"/release/bundle/deb/OverBind_*_amd64/data/* "$pkgdir/"
 
   install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname/"
 }
