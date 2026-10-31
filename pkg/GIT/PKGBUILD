@@ -24,6 +24,7 @@ makedepends=(
   'cargo-tauri'
   'git'
   'npm'
+  'patchelf'
 )
 
 provides=("$_pkgname")
