@@ -157,7 +157,7 @@ jobs:
         run: |
           pacman -S --noconfirm --needed \
             base-devel wget zsync \
-            cargo cargo-tauri npm \
+            cargo cargo-tauri npm patchelf \
             gtk3 libayatana-appindicator webkit2gtk-4.1 xorg-server-xvfb
 
       - name: Fix permissions
