@@ -1026,6 +1026,14 @@ fn windows_code_to_evdev_enum(code: u32) -> Option<Key> {
         0xB3 => Some(Key::KEY_PLAYPAUSE),
         0xB4 => Some(Key::KEY_MAIL),
         0xB5 => Some(Key::KEY_MEDIA),
+        0xBA => Some(Key::KEY_SEMICOLON),
+        0xBB => Some(Key::KEY_EQUAL),
+        0xBC => Some(Key::KEY_COMMA),
+        0xBD => Some(Key::KEY_MINUS),
+        0xBE => Some(Key::KEY_DOT),
+        0xBF => Some(Key::KEY_SLASH),
+        0xDC => Some(Key::KEY_BACKSLASH),
+        0xDE => Some(Key::KEY_APOSTROPHE),
         _ => None,
     }
 }
